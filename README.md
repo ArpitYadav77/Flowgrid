@@ -186,16 +186,3 @@ Interested in Full-Stack Development & Scalable Systems
 
 📄 License
 This project is for learning, demonstration, and portfolio purposes.
-
-yaml
-Copy code
-
----
-
-If you want, next I can:
-- ✨ Customize README for **SDE interviews**
-- 📸 Add **screenshots section**
-- 🧠 Add **system design explanation**
-- 🏷️ Create **resume bullet points from this project**
-
-Just tell me 💪

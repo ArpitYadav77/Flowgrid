@@ -4,7 +4,7 @@ import { useNotification } from '../context/NotificationContext';
 import * as Icons from '../components/Icons';
 
 const Settings = () => {
-  const { user, logout, updateProfile } = useAuth();
+  const { user, logout } = useAuth();
   const { showNotification } = useNotification();
 
   // Profile Settings State

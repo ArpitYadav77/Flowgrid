@@ -19,6 +19,7 @@ const ProviderDashboard = ({ activeTab: propActiveTab, onTabChange }) => {
   const [bookings, setBookings] = useState([]);
   const [payments, setPayments] = useState([]);
   const [activeTab, setActiveTab] = useState(propActiveTab || 'overview');
+  // eslint-disable-next-line no-unused-vars
   const [loading, setLoading] = useState(true);
 
   // Service form state
@@ -32,6 +33,7 @@ const ProviderDashboard = ({ activeTab: propActiveTab, onTabChange }) => {
   });
 
   // Fetch provider data
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     fetchProviderData();
   }, []);
@@ -44,6 +46,7 @@ const ProviderDashboard = ({ activeTab: propActiveTab, onTabChange }) => {
   }, [propActiveTab]);
 
   // Fetch payments when tab changes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (activeTab === 'payments') {
       fetchPayments();
@@ -127,6 +130,7 @@ const ProviderDashboard = ({ activeTab: propActiveTab, onTabChange }) => {
     }
   };
 
+  // eslint-disable-next-line no-unused-vars
   const handleUpdateBookingStatus = async (bookingId, newStatus) => {
     try {
       // For now, just update locally

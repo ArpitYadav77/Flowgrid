@@ -1,13 +1,13 @@
-﻿import React from 'react';
+import React from 'react';
 import * as LucideIcons from 'lucide-react';
 
 // Logo (keeping custom)
 export const Logo = ({ className }) => (
   <svg className={className} viewBox="0 0 32 32" fill="none">
-    <rect x="4" y="4" width="10" height="10" rx="2" fill="#2F6F64"/>
-    <rect x="18" y="4" width="10" height="10" rx="2" fill="#2F6F64" opacity="0.6"/>
-    <rect x="4" y="18" width="10" height="10" rx="2" fill="#2F6F64" opacity="0.6"/>
-    <rect x="18" y="18" width="10" height="10" rx="2" fill="#2F6F64" opacity="0.3"/>
+    <rect x="4" y="4" width="10" height="10" rx="2" fill="#0F3D3E"/>
+    <rect x="18" y="4" width="10" height="10" rx="2" fill="#0F3D3E" opacity="0.6"/>
+    <rect x="4" y="18" width="10" height="10" rx="2" fill="#0F3D3E" opacity="0.6"/>
+    <rect x="18" y="18" width="10" height="10" rx="2" fill="#0F3D3E" opacity="0.3"/>
   </svg>
 );
 

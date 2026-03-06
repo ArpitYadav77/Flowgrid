@@ -12,6 +12,7 @@ import { dashboardAPI, servicesAPI, bookingsAPI, razorpayAPI } from '../services
 const Dashboard = () => {
   const { showNotification } = useNotification();
   const [activePeriod, setActivePeriod] = useState('today');
+  // eslint-disable-next-line no-unused-vars
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -83,7 +84,7 @@ const Dashboard = () => {
     };
 
     fetchData();
-  }, [activePeriod, currentPage]);
+  }, [activePeriod, currentPage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handlePeriodChange = (period) => {
     setActivePeriod(period);

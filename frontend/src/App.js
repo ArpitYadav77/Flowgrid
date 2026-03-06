@@ -2,11 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import TopBar from './components/TopBar';
-import Dashboard from './pages/Dashboard';
 import CustomerDashboard from './pages/CustomerDashboard';
 import ProviderDashboard from './pages/ProviderDashboard';
 import SignIn from './pages/SignIn';
 import SignUp from './pages/SignUp';
+import VerifyEmail from './pages/VerifyEmail';
 import HeroPage from './pages/HeroPage';
 import HelpCenter from './pages/HelpCenter';
 import Settings from './pages/Settings';
@@ -72,7 +72,7 @@ const AuthRoute = ({ children }) => {
 
 // Dashboard wrapper with layout
 const DashboardLayout = () => {
-  const { user, isProvider } = useAuth();
+  const { isProvider } = useAuth();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [currentView, setCurrentView] = useState('dashboard');
@@ -170,6 +170,9 @@ function App() {
                   </AuthRoute>
                 } 
               />
+
+              {/* Email OTP verification — public, no auth required */}
+              <Route path="/verify-email" element={<VerifyEmail />} />
               
               {/* First login hero page */}
               <Route 

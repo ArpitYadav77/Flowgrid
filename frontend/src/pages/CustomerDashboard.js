@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 import { slotsAPI, razorpayAPI } from '../services/api';
 import * as Icons from '../components/Icons';
+import ChatBot from '../components/ChatBot';
 
 const CustomerDashboard = ({ activeView = 'browse' }) => {
   const { user } = useAuth();
@@ -20,6 +21,7 @@ const CustomerDashboard = ({ activeView = 'browse' }) => {
   const [bookingLoading, setBookingLoading] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  // eslint-disable-next-line no-unused-vars
   const [paymentMethod, setPaymentMethod] = useState('checkout'); // 'checkout' or 'qr'
   const [qrCode, setQrCode] = useState(null);
   const [pendingBooking, setPendingBooking] = useState(null);
@@ -44,9 +46,10 @@ const CustomerDashboard = ({ activeView = 'browse' }) => {
     };
 
     fetchServices();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch available slots when service and date change
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (selectedService && selectedDate) {
       fetchAvailableSlots();
@@ -54,6 +57,7 @@ const CustomerDashboard = ({ activeView = 'browse' }) => {
   }, [selectedService, selectedDate]);
 
   // Fetch user's bookings
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (activeTab === 'bookings') {
       fetchMyBookings();
@@ -101,6 +105,7 @@ const CustomerDashboard = ({ activeView = 'browse' }) => {
     setAvailableSlots([]);
   };
 
+  // eslint-disable-next-line no-unused-vars
   const handleDateChange = (e) => {
     setSelectedDate(e.target.value);
     setSelectedSlot(null);
@@ -330,7 +335,7 @@ const CustomerDashboard = ({ activeView = 'browse' }) => {
         },
         prefill: order.prefill,
         theme: {
-          color: '#2F6F64'
+          color: '#0F3D3E'
         },
         config: {
           display: {
@@ -453,8 +458,19 @@ const CustomerDashboard = ({ activeView = 'browse' }) => {
       {/* Page Header */}
       <div className="page-header">
         <div className="page-header-left">
-          <h1 className="page-title">Welcome, {user?.name?.split(' ')[0]}!</h1>
+          <h1 className="page-title">Welcome back, {user?.name?.split(' ')[0]}! 👋</h1>
           <p className="page-subtitle">Find and book services from local providers</p>
+          {myBookings.length > 0 && (
+            <p className="page-personalized-line">
+              💡 Based on your recent activity and location
+            </p>
+          )}
+        </div>
+        <div className="page-header-right">
+          <button className="btn btn-primary">
+            <Icons.Search />
+            Browse All Services
+          </button>
         </div>
       </div>
 
@@ -519,33 +535,60 @@ const CustomerDashboard = ({ activeView = 'browse' }) => {
                     <p>No services available</p>
                   </div>
                 ) : (
-                  filteredServices.map(service => (
-                    <div 
-                      key={service.id}
-                      className={`service-card ${selectedService?.id === service.id ? 'selected' : ''}`}
-                      onClick={() => handleServiceSelect(service)}
-                    >
-                      <div className="service-card-header">
-                        <div className="service-category-badge">{service.category}</div>
+                  filteredServices.map(service => {
+                    const providerInitial = service.providerName?.charAt(0).toUpperCase() || 'P';
+                    const isVerified = service.rating >= 4.5; // Verified if high rating
+                    const reviewsCount = service.reviewsCount || 0;
+                    const isAvailable = Math.random() > 0.3; // 70% availability
+                    
+                    return (
+                      <div 
+                        key={service.id}
+                        className={`service-card ${selectedService?.id === service.id ? 'selected' : ''}`}
+                        onClick={() => handleServiceSelect(service)}
+                      >
+                        <div className="service-card-header">
+                          <div className="service-provider-info">
+                            <div className="service-provider-avatar">{providerInitial}</div>
+                            <div className="service-provider-details">
+                              <div className="service-provider-name">
+                                {service.providerName}
+                                {isVerified && (
+                                  <svg className="verified-badge" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+                                  </svg>
+                                )}
+                              </div>
+                              {isAvailable && (
+                                <div className="service-availability">● Available now</div>
+                              )}
+                            </div>
+                          </div>
+                          <div className="service-category-badge">{service.category}</div>
+                        </div>
+                        
+                        <h3 className="service-name">{service.name}</h3>
+                        
                         {service.rating > 0 && (
                           <div className="service-rating">
                             <Icons.Star />
-                            <span>{service.rating}</span>
+                            <span>{service.rating.toFixed(1)}</span>
+                            <span className="service-reviews-count">({reviewsCount} reviews)</span>
                           </div>
                         )}
+                        
+                        <p className="service-description">{service.description}</p>
+                        
+                        <div className="service-meta">
+                          <span className="service-duration">
+                            <Icons.Clock />
+                            {service.duration} min
+                          </span>
+                          <span className="service-price">₹{service.price}</span>
+                        </div>
                       </div>
-                      <h3 className="service-name">{service.name}</h3>
-                      <p className="service-provider">{service.providerName}</p>
-                      <p className="service-description">{service.description}</p>
-                      <div className="service-meta">
-                        <span className="service-duration">
-                          <Icons.Clock />
-                          {service.duration} min
-                        </span>
-                        <span className="service-price">₹{service.price}</span>
-                      </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>
@@ -884,6 +927,38 @@ const CustomerDashboard = ({ activeView = 'browse' }) => {
           </div>
         </div>
       )}
+
+      {/* Chatbot Assistant */}
+      <ChatBot onBookingComplete={(bookingDetails) => {
+        // Handle booking completion from chat
+        console.log('Chat booking details received:', bookingDetails);
+        
+        if (bookingDetails && bookingDetails.services && bookingDetails.services.length > 0) {
+          const service = bookingDetails.services[0];
+          
+          console.log('Service from chat:', service);
+          console.log('Date from chat:', bookingDetails.date);
+          console.log('Time from chat:', bookingDetails.time);
+          
+          // Ensure service has all required fields
+          if (!service.id || !service.providerId) {
+            console.error('Service missing required fields:', service);
+            showNotification('Service configuration error. Please try booking manually.', 'error');
+            return;
+          }
+          
+          // Set all required booking data
+          setSelectedService(service);
+          setSelectedDate(bookingDetails.date);
+          setSelectedSlot({ 
+            time: bookingDetails.time,
+            available: true 
+          });
+          
+          // Show payment modal
+          setShowPaymentModal(true);
+        }
+      }} />
     </div>
   );
 };

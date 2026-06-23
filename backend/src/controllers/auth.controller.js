@@ -81,6 +81,7 @@ const signup = async (req, res, next) => {
       message: 'Account created. Please verify your email.',
       pendingVerification: true,
       email: user.email,
+      ...(process.env.NODE_ENV === 'development' && { devOTP: otpCode }),
     });
   } catch (error) {
     next(error);
@@ -157,7 +158,10 @@ const resendOTP = async (req, res, next) => {
       console.warn(`[OTP] Resend failed: ${emailErr.message}`);
     }
 
-    res.json({ message: 'New verification code sent' });
+    res.json({
+      message: 'New verification code sent',
+      ...(process.env.NODE_ENV === 'development' && { devOTP: otpCode }),
+    });
   } catch (error) {
     next(error);
   }
@@ -312,6 +316,18 @@ const updateProfile = async (req, res, next) => {
   }
 };
 
+const completeFirstLogin = async (req, res, next) => {
+  try {
+    await prisma.user.update({
+      where: { id: req.user.id },
+      data: { isFirstLogin: false },
+    });
+    res.json({ message: 'First login completed' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   signup,
   verifyOTP,
@@ -321,4 +337,5 @@ module.exports = {
   logoutAll,
   getMe,
   updateProfile,
+  completeFirstLogin,
 };

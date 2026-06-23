@@ -99,15 +99,15 @@ const DashboardLayout = () => {
   };
 
   const renderContent = () => {
-    if (currentView === 'help') {
-      return <HelpCenter />;
-    }
-    
-    if (currentView === 'settings') {
-      return <Settings />;
-    }
-    
     if (isProvider) {
+      if (currentView === 'help') {
+        return <HelpCenter />;
+      }
+      
+      if (currentView === 'settings') {
+        return <Settings />;
+      }
+
       // Map sidebar views to provider dashboard tabs
       const providerTabMap = {
         'dashboard': 'overview',
@@ -119,14 +119,8 @@ const DashboardLayout = () => {
       return <ProviderDashboard activeTab={activeTab} onTabChange={handleViewChange} />;
     }
     
-    // For customers, map view to activeView prop
-    const viewMap = {
-      'browse': 'browse',
-      'bookings': 'bookings',
-      'payments': 'payments'
-    };
-    const customerView = viewMap[currentView] || 'browse';
-    return <CustomerDashboard activeView={customerView} />;
+    // For customers, pass currentView directly to CustomerDashboard
+    return <CustomerDashboard activeView={currentView} onViewChange={handleViewChange} />;
   };
 
   return (

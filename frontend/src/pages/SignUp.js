@@ -71,7 +71,7 @@ const SignUp = () => {
       role: formData.role
     });
     if (result.success && result.pendingVerification) {
-      navigate('/verify-email', { state: { email: formData.email } });
+      navigate('/verify-email', { state: { email: formData.email, devOTP: result.devOTP } });
     } else if (result.success) {
       navigate('/welcome');
     } else {

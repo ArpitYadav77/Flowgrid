@@ -1,19 +1,32 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
-import { chatbotAPI } from '../services/api';
-import * as Icons from './Icons';
+import { chatbotAPI, slotsAPI } from '../services/api';
+import { Clock, Calendar, MessageSquare, RefreshCw, Send, CheckCircle, Briefcase, X } from './Icons';
+import '../styles/ChatBot.css';
 
 const ChatBot = ({ onBookingComplete }) => {
   const { user } = useAuth();
   const { showNotification } = useNotification();
+  
+  // State variables
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [session, setSession] = useState(null);
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [customDate, setCustomDate] = useState('');
+  const [availableSlots, setAvailableSlots] = useState([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyBookings, setHistoryBookings] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [upcomingBooking, setUpcomingBooking] = useState(null);
+
   const messagesEndRef = useRef(null);
 
+  // Auto-scroll to the newest message
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -22,19 +35,94 @@ const ChatBot = ({ onBookingComplete }) => {
     scrollToBottom();
   }, [messages]);
 
+  // Initial Greeting trigger
   useEffect(() => {
     if (isOpen && messages.length === 0) {
-      // Send initial greeting
       sendInitialGreeting();
     }
   }, [isOpen]);
 
-  const sendInitialGreeting = async () => {
+  // Proactively check for upcoming bookings on mount
+  useEffect(() => {
+    const checkUpcomingBookings = async () => {
+      try {
+        const res = await slotsAPI.getBookings();
+        if (res.data && res.data.data) {
+          const todayStr = new Date().toISOString().split('T')[0];
+          const activeBooking = res.data.data.find(
+            b => b.date === todayStr && (b.status === 'confirmed' || b.status === 'pending')
+          );
+          if (activeBooking) {
+            setUpcomingBooking(activeBooking);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to check upcoming bookings:', err);
+      }
+    };
+
+    if (user) {
+      checkUpcomingBookings();
+    }
+  }, [user]);
+
+  // Fetch real-time available slots when the date is updated
+  useEffect(() => {
+    const fetchSlots = async () => {
+      if (!selectedDate) return;
+      
+      const lastMessage = messages[messages.length - 1];
+      if (lastMessage && lastMessage.type === 'bot' && lastMessage.showAllSlots) {
+        setLoadingSlots(true);
+        try {
+          // 'USR-SALON-01' is the hardcoded providerId for Priya's Beauty Salon
+          const res = await slotsAPI.getAvailableSlots({
+            date: selectedDate,
+            providerId: 'USR-SALON-01'
+          });
+          if (res.data && res.data.slots) {
+            const activeTimes = res.data.slots.map(s => s.time);
+            setAvailableSlots(activeTimes);
+          }
+        } catch (err) {
+          console.error('Error fetching slots for chatbot:', err);
+        } finally {
+          setLoadingSlots(false);
+        }
+      }
+    };
+
+    fetchSlots();
+  }, [messages, selectedDate]);
+
+  // Fetch user bookings for history view
+  const fetchBookingHistory = async () => {
+    setLoadingHistory(true);
+    try {
+      const res = await slotsAPI.getBookings();
+      if (res.data && res.data.data) {
+        setHistoryBookings(res.data.data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch booking history:', err);
+      showNotification('Failed to load booking history', 'error');
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  useEffect(() => {
+    if (showHistory) {
+      fetchBookingHistory();
+    }
+  }, [showHistory]);
+
+  const sendInitialGreeting = () => {
     const greeting = {
       id: Date.now(),
       type: 'bot',
-      message: `Hello ${user?.name || 'there'}! Welcome to Priya's Beauty Salon. How can I help you today?`,
-      options: ['Book Haircut', 'Book Beard Trim', 'Book Facial', 'View All Services'],
+      message: `Welcome! What would you like to book today?`,
+      options: ['Haircut', 'Beard Trim', 'Facial', 'View Services'],
       timestamp: new Date()
     };
     setMessages([greeting]);
@@ -43,10 +131,16 @@ const ChatBot = ({ onBookingComplete }) => {
   const sendMessage = async (messageText, isOptionClick = false) => {
     if (!messageText.trim() && !isOptionClick) return;
 
+    // Map selections to user-friendly text if needed
+    let displayMessage = messageText;
+    if (messageText === 'Haircut') displayMessage = 'Book Haircut';
+    if (messageText === 'Beard Trim') displayMessage = 'Book Beard Trim';
+    if (messageText === 'Facial') displayMessage = 'Book Facial';
+
     const userMessage = {
       id: Date.now(),
       type: 'user',
-      message: messageText,
+      message: displayMessage,
       timestamp: new Date()
     };
 
@@ -87,6 +181,20 @@ const ChatBot = ({ onBookingComplete }) => {
   };
 
   const handleOptionClick = (option) => {
+    // Check if the clicked option is a date selection to store in React state
+    const today = new Date();
+    if (option === 'Today') {
+      const todayStr = today.toISOString().split('T')[0];
+      setSelectedDate(todayStr);
+    } else if (option === 'Tomorrow') {
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const tomorrowStr = tomorrow.toISOString().split('T')[0];
+      setSelectedDate(tomorrowStr);
+    } else if (option.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      setSelectedDate(option);
+    }
+    
     sendMessage(option, true);
   };
 
@@ -100,41 +208,43 @@ const ChatBot = ({ onBookingComplete }) => {
       await chatbotAPI.resetSession();
       setMessages([]);
       setSession(null);
+      setSelectedDate(null);
+      setCustomDate('');
+      setAvailableSlots([]);
       sendInitialGreeting();
     } catch (error) {
       console.error('Reset error:', error);
     }
   };
 
+  const isSlotAvailable = (slotTime) => {
+    // Match times: e.g. slotTime="09:00 AM" or "09:00" vs availableSlots=["09:00", "09:30"]
+    const cleanedSlotTime = slotTime.split(' ')[0];
+    return availableSlots.includes(cleanedSlotTime);
+  };
+
   return (
     <>
-      {/* Chat Toggle Button */}
-      <button
-        className={`chat-toggle-btn ${isOpen ? 'open' : ''}`}
-        onClick={() => setIsOpen(!isOpen)}
-        aria-label="Toggle chat"
-      >
-        {isOpen ? (
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        ) : (
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-          </svg>
-        )}
-        {!isOpen && <span className="chat-badge">Assistant</span>}
-      </button>
+      {/* Floating launcher button: hidden when open */}
+      <div className={`chat-launcher-container ${isOpen ? 'hidden' : ''}`}>
+        <button
+          className="chat-toggle-btn"
+          onClick={() => setIsOpen(true)}
+          aria-label="Open salon assistant chat"
+        >
+          <MessageSquare size={24} />
+          <span className="chat-badge">Assistant</span>
+        </button>
+      </div>
 
       {/* Chat Window */}
       {isOpen && (
         <div className="chatbot-window">
+          {/* Chat Header */}
           <div className="chatbot-header">
             <div className="chatbot-header-content">
               <div className="chatbot-avatar">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z" />
-                </svg>
+                <Briefcase size={20} />
               </div>
               <div>
                 <h3>Salon Assistant</h3>
@@ -142,84 +252,200 @@ const ChatBot = ({ onBookingComplete }) => {
               </div>
             </div>
             <div className="chatbot-header-actions">
-              <button onClick={resetChat} title="Reset chat" className="chat-icon-btn">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
+              <button 
+                onClick={() => setShowHistory(!showHistory)} 
+                title="Booking History" 
+                className={`chat-icon-btn ${showHistory ? 'active' : ''}`}
+              >
+                <Calendar size={16} />
               </button>
-              <button onClick={() => setIsOpen(false)} className="chat-icon-btn">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
+              <button onClick={resetChat} title="Reset chat" className="chat-icon-btn">
+                <RefreshCw size={16} />
+              </button>
+              <button onClick={() => setIsOpen(false)} title="Minimize chat" className="chat-icon-btn">
+                <X size={16} />
               </button>
             </div>
           </div>
 
-          <div className="chatbot-messages">
-            {messages.map((msg) => (
-              <div key={msg.id} className={`chat-message ${msg.type}`}>
-                {msg.type === 'bot' && (
-                  <div className="chat-message-avatar">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z" />
-                    </svg>
+          {/* Booking History Overlay */}
+          {showHistory && (
+            <div className="chat-history-overlay">
+              <div className="chat-history-header">
+                <h4>Booking History</h4>
+                <button onClick={() => setShowHistory(false)} className="chat-icon-btn" style={{ color: '#1e293b' }}>
+                  <X size={16} />
+                </button>
+              </div>
+              <div className="chat-history-list">
+                {loadingHistory ? (
+                  <div className="chat-history-empty">Loading history...</div>
+                ) : historyBookings.length === 0 ? (
+                  <div className="chat-history-empty">
+                    <Calendar size={28} />
+                    <span>No bookings found.</span>
                   </div>
-                )}
-                <div className="chat-message-content">
-                  <div className="chat-message-text">{msg.message}</div>
-                  {msg.requiresPayment && msg.bookingDetails && (
-                    <div className="chat-payment-action">
-                      <button
-                        className="chat-payment-btn"
-                        onClick={() => {
-                          if (onBookingComplete) {
-                            onBookingComplete(msg.bookingDetails);
-                          }
-                        }}
-                      >
-                        💳 Pay Now - ₹{msg.bookingDetails.total}
-                      </button>
-                    </div>
-                  )}
-                  {msg.options && msg.options.length > 0 && !msg.requiresPayment && (
-                    <div className="chat-options">
-                      {msg.options.map((option, idx) => (
-                        <button
-                          key={idx}
-                          className="chat-option-btn"
-                          onClick={() => handleOptionClick(option)}
-                        >
-                          {option}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  {msg.showAllSlots && msg.allSlots && (
-                    <div className="chat-time-slots">
-                      <div className="chat-time-slots-label">All available slots:</div>
-                      <div className="chat-time-slots-grid">
-                        {msg.allSlots.map((slot, idx) => (
-                          <button
-                            key={idx}
-                            className="chat-time-slot-btn"
-                            onClick={() => handleOptionClick(slot)}
-                          >
-                            {slot}
-                          </button>
-                        ))}
+                ) : (
+                  historyBookings.map((b) => (
+                    <div key={b.id} className="chat-history-item">
+                      <div className="chat-history-item-meta">
+                        <span>{b.date} • {b.time}</span>
+                        <span className={`chat-history-status-badge ${b.status}`}>
+                          {b.status}
+                        </span>
+                      </div>
+                      <div className="chat-history-item-title">{b.serviceName}</div>
+                      <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '500' }}>
+                        Amount: ₹{b.price}
                       </div>
                     </div>
-                  )}
-                </div>
+                  ))
+                )}
               </div>
-            ))}
+            </div>
+          )}
 
+          {/* Chat Body */}
+          <div className="chatbot-messages">
+            {/* Proactive Booking Reminder */}
+            {upcomingBooking && (
+              <div className="chat-reminder-banner">
+                <Clock size={16} />
+                <span>
+                  Reminder: You have an upcoming <strong>{upcomingBooking.serviceName}</strong> today at <strong>{upcomingBooking.time}</strong>!
+                </span>
+              </div>
+            )}
+
+            {messages.map((msg, index) => {
+              const isLastMessage = index === messages.length - 1;
+              return (
+                <div key={msg.id} className={`chat-message ${msg.type}`}>
+                  {msg.type === 'bot' && (
+                    <div className="chat-message-avatar">
+                      <Briefcase size={14} />
+                    </div>
+                  )}
+                  <div className="chat-message-content">
+                    <div className="chat-message-text">{msg.message}</div>
+
+                    {/* Booking Confirmation Card */}
+                    {msg.requiresPayment && msg.bookingDetails && (
+                      <div className="booking-summary-card">
+                        <div className="booking-summary-header">
+                          <CheckCircle size={14} style={{ color: '#10b981' }} />
+                          <span>Booking Summary</span>
+                        </div>
+                        <div className="booking-summary-body">
+                          <div className="booking-summary-item">
+                            <span>Service:</span>
+                            <strong>{msg.bookingDetails.services.map(s => s.name).join(', ')}</strong>
+                          </div>
+                          <div className="booking-summary-item">
+                            <span>Date:</span>
+                            <strong>{msg.bookingDetails.date}</strong>
+                          </div>
+                          <div className="booking-summary-item">
+                            <span>Time:</span>
+                            <strong>{msg.bookingDetails.time}</strong>
+                          </div>
+                          <div className="booking-summary-item total">
+                            <span>Total Amount:</span>
+                            <span>₹{msg.bookingDetails.total}</span>
+                          </div>
+                        </div>
+                        <div className="chat-payment-action">
+                          <button
+                            className="chat-payment-btn"
+                            onClick={() => {
+                              if (onBookingComplete) {
+                                onBookingComplete(msg.bookingDetails);
+                              }
+                            }}
+                          >
+                            💳 Pay Now - ₹{msg.bookingDetails.total}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Quick action chips (Only show on the very last bot message in the stream) */}
+                    {msg.options && msg.options.length > 0 && !msg.requiresPayment && isLastMessage && !isTyping && (
+                      <div className="chat-options">
+                        {msg.options.map((option, idx) => {
+                          if (option === 'Choose Date') return null; // Rendered by inline Date picker instead
+                          return (
+                            <button
+                              key={idx}
+                              className="chat-option-btn"
+                              onClick={() => handleOptionClick(option)}
+                            >
+                              {option}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Inline Date Picker */}
+                    {msg.options && msg.options.includes('Choose Date') && isLastMessage && !isTyping && (
+                      <div className="chat-date-picker">
+                        <span className="chat-date-picker-label">Select Date:</span>
+                        <div className="chat-date-picker-input-group">
+                          <input
+                            type="date"
+                            min={new Date().toISOString().split('T')[0]}
+                            value={customDate}
+                            onChange={(e) => setCustomDate(e.target.value)}
+                          />
+                          <button
+                            disabled={!customDate}
+                            onClick={() => {
+                              handleOptionClick(customDate);
+                              setCustomDate('');
+                            }}
+                            className="chat-date-submit-btn"
+                          >
+                            Select
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Real-time Time Slots Grid */}
+                    {msg.showAllSlots && msg.allSlots && isLastMessage && !isTyping && (
+                      <div className="chat-time-slots">
+                        <div className="chat-time-slots-label">
+                          {loadingSlots ? 'Updating slot availability...' : 'Available Time Slots:'}
+                        </div>
+                        <div className="chat-time-slots-grid">
+                          {msg.allSlots.map((slot, idx) => {
+                            const isAvail = isSlotAvailable(slot);
+                            return (
+                              <button
+                                key={idx}
+                                className="chat-time-slot-btn"
+                                disabled={loadingSlots || !isAvail}
+                                onClick={() => handleOptionClick(slot)}
+                                title={isAvail ? 'Available' : 'Already Booked'}
+                              >
+                                {slot}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Typing Indicator */}
             {isTyping && (
               <div className="chat-message bot">
                 <div className="chat-message-avatar">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z" />
-                  </svg>
+                  <Briefcase size={14} />
                 </div>
                 <div className="chat-message-content">
                   <div className="chat-typing-indicator">
@@ -234,19 +460,24 @@ const ChatBot = ({ onBookingComplete }) => {
             <div ref={messagesEndRef} />
           </div>
 
+          {/* Sticky Bottom Chat Input Footer */}
           <form className="chatbot-input" onSubmit={handleSubmit}>
-            <input
-              type="text"
-              value={inputMessage}
-              onChange={(e) => setInputMessage(e.target.value)}
-              placeholder="Type your message..."
-              disabled={isTyping}
-            />
-            <button type="submit" disabled={!inputMessage.trim() || isTyping}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-              </svg>
-            </button>
+            <div className="chatbot-input-wrapper">
+              <input
+                type="text"
+                value={inputMessage}
+                onChange={(e) => setInputMessage(e.target.value)}
+                placeholder="Type a message..."
+                disabled={isTyping}
+              />
+              <button 
+                type="submit" 
+                className="chat-send-btn" 
+                disabled={!inputMessage.trim() || isTyping}
+              >
+                <Send size={14} />
+              </button>
+            </div>
           </form>
         </div>
       )}

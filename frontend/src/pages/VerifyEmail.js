@@ -38,10 +38,16 @@ const VerifyEmail = () => {
     return `${m}:${s}`;
   };
 
-  // Focus first empty input on mount
+  // Focus first empty input on mount & handle dev OTP autofill
   useEffect(() => {
-    inputRefs.current[0]?.focus();
-  }, []);
+    if (location.state?.devOTP) {
+      const otpDigits = location.state.devOTP.toString().split('');
+      setDigits(otpDigits);
+      setSuccess(`[Dev Mode] Verification code is: ${location.state.devOTP}`);
+    } else {
+      inputRefs.current[0]?.focus();
+    }
+  }, [location.state]);
 
   const handleDigitChange = (index, value) => {
     // Accept only single digit
@@ -117,11 +123,17 @@ const VerifyEmail = () => {
     setError('');
     setSuccess('');
     try {
-      await authAPI.resendOTP({ email });
+      const response = await authAPI.resendOTP({ email });
       setSecondsLeft(OTP_EXPIRY_SECONDS);
       setDigits(Array(OTP_LENGTH).fill(''));
-      setSuccess('A new code has been sent to your email.');
-      inputRefs.current[0]?.focus();
+      if (response.data?.devOTP) {
+        const otpDigits = response.data.devOTP.toString().split('');
+        setDigits(otpDigits);
+        setSuccess(`[Dev Mode] A new code has been generated: ${response.data.devOTP}`);
+      } else {
+        setSuccess('A new code has been sent to your email.');
+        inputRefs.current[0]?.focus();
+      }
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to resend code. Please try again.');
     }

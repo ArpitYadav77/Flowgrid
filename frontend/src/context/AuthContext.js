@@ -43,9 +43,9 @@ export const AuthProvider = ({ children }) => {
   const login = useCallback(async (email, password) => {
     try {
       const response = await authAPI.login({ email, password });
-      const { user, token, isFirstLogin: firstLogin } = response.data;
+      const { user, accessToken, isFirstLogin: firstLogin } = response.data;
 
-      localStorage.setItem('flowgrid_token', token);
+      localStorage.setItem('flowgrid_token', accessToken);
       setUser(user);
       setIsAuthenticated(true);
       setIsFirstLogin(firstLogin);
@@ -67,12 +67,12 @@ export const AuthProvider = ({ children }) => {
 
       // Account created but email not yet verified — do NOT set auth state
       if (data.pendingVerification) {
-        return { success: true, pendingVerification: true, email: data.email };
+        return { success: true, pendingVerification: true, email: data.email, devOTP: data.devOTP };
       }
 
       // Fallback: if somehow a token is returned (shouldn't happen with OTP flow)
-      const { user, token, isFirstLogin: firstLogin } = data;
-      localStorage.setItem('flowgrid_token', token);
+      const { user, accessToken, isFirstLogin: firstLogin } = data;
+      localStorage.setItem('flowgrid_token', accessToken);
       setUser(user);
       setIsAuthenticated(true);
       setIsFirstLogin(firstLogin);
@@ -86,9 +86,9 @@ export const AuthProvider = ({ children }) => {
   const verifyOTP = useCallback(async (email, otp) => {
     try {
       const response = await authAPI.verifyOTP({ email, otp });
-      const { user, token, isFirstLogin: firstLogin } = response.data;
+      const { user, accessToken, isFirstLogin: firstLogin } = response.data;
 
-      localStorage.setItem('flowgrid_token', token);
+      localStorage.setItem('flowgrid_token', accessToken);
       setUser(user);
       setIsAuthenticated(true);
       setIsFirstLogin(firstLogin);
@@ -134,19 +134,23 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
-  // Helper to check user role
-  const isProvider = user?.role && user.role !== 'customer';
-  const isCustomer = user?.role === 'customer';
+  // Helper to check user role (case-insensitive)
+  const isProvider = user?.role && user.role.toLowerCase() !== 'customer';
+  const isCustomer = user?.role && user.role.toLowerCase() === 'customer';
 
   const getRoleDisplayName = (role) => {
+    if (!role) return '';
+    const normalizedRole = role.toLowerCase();
     const roleNames = {
       customer: 'Customer',
       salon_owner: 'Salon Owner',
       tutor: 'Tutor',
       car_washer: 'Car Washer',
-      service_provider: 'Service Provider'
+      service_provider: 'Service Provider',
+      provider: 'Provider',
+      admin: 'Admin'
     };
-    return roleNames[role] || role;
+    return roleNames[normalizedRole] || role;
   };
 
   const value = {

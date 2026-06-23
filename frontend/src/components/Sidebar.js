@@ -35,14 +35,17 @@ const getNavSections = (isProvider) => {
     {
       title: 'Main',
       items: [
+        { id: 'dashboard', label: 'Dashboard', icon: 'Dashboard', badge: null },
         { id: 'browse', label: 'Browse Services', icon: 'Search', badge: null },
         { id: 'bookings', label: 'My Bookings', icon: 'Calendar', badge: null },
+        { id: 'favorites', label: 'Favorites', icon: 'Heart', badge: null },
       ]
     },
     {
       title: 'Account',
       items: [
         { id: 'payments', label: 'Payment History', icon: 'CreditCard', badge: null },
+        { id: 'notifications', label: 'Notifications', icon: 'Bell', badge: null },
         { id: 'settings', label: 'Settings', icon: 'SettingsGear', badge: null },
         { id: 'help', label: 'Help Center', icon: 'HelpCircle', badge: null },
       ]

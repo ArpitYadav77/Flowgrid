@@ -16,6 +16,12 @@ const reviewRoutes = require('./routes/review.routes');
 const searchRoutes = require('./routes/search.routes');
 const adminRoutes = require('./routes/admin.routes');
 
+// Legacy routes for chatbot, slots, razorpay, and unsplash compatibility
+const chatbotRoutes = require('../routes/chatbot');
+const slotsRoutes = require('../routes/slots');
+const razorpayRoutes = require('../routes/razorpay');
+const unsplashRoutes = require('../routes/unsplash');
+
 const app = express();
 
 // ─── CORS ───────────────────────────────────────────────────────────
@@ -84,6 +90,12 @@ app.use('/api/provider', providerRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/admin', adminRoutes);
+
+// Mount legacy routes
+app.use('/api/chatbot', chatbotRoutes);
+app.use('/api/slots', slotsRoutes);
+app.use('/api/razorpay', razorpayRoutes);
+app.use('/api/unsplash', unsplashRoutes);
 
 // ─── Health Check ───────────────────────────────────────────────────
 

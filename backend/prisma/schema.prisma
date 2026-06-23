@@ -1,0 +1,289 @@
+// FlowGrid — Production-grade Prisma Schema
+// PostgreSQL + full relationships, indexing, and constraints
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── ENUMS ──────────────────────────────────────────────────────────
+
+enum UserRole {
+  CUSTOMER
+  PROVIDER
+  ADMIN
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
+enum PaymentStatus {
+  CREATED
+  AUTHORIZED
+  CAPTURED
+  FAILED
+  REFUNDED
+}
+
+enum ServiceStatus {
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum SlotStatus {
+  AVAILABLE
+  LOCKED
+  BOOKED
+}
+
+// ─── USER ───────────────────────────────────────────────────────────
+
+model User {
+  id              String    @id @default(cuid())
+  email           String    @unique
+  password        String
+  name            String
+  phone           String?
+  avatar          String?
+  role            UserRole  @default(CUSTOMER)
+  isEmailVerified Boolean   @default(false)
+  otp             String?
+  otpExpiresAt    DateTime?
+  isFirstLogin    Boolean   @default(true)
+
+  // Refresh tokens
+  refreshTokens RefreshToken[]
+
+  // Google OAuth
+  googleId String? @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  provider       Provider?
+  bookings       Booking[]  @relation("CustomerBookings")
+  reviews        Review[]
+  payments       Payment[]
+
+  @@index([email])
+  @@index([role])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([token])
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+// ─── PROVIDER ───────────────────────────────────────────────────────
+
+model Provider {
+  id           String  @id @default(cuid())
+  userId       String  @unique
+  user         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  businessName String
+  description  String?
+  category     String  // salon, tutor, car_washer, etc.
+  address      String?
+  city         String?
+  state        String?
+  pincode      String?
+
+  // Location for geo-search
+  latitude  Float?
+  longitude Float?
+
+  // Business hours (JSON: { "monday": { "open": "09:00", "close": "18:00" }, ... })
+  businessHours Json?
+
+  isVerified Boolean @default(false)
+  rating     Float   @default(0)
+  totalReviews Int   @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  services  Service[]
+  timeSlots TimeSlot[]
+  bookings  Booking[]  @relation("ProviderBookings")
+
+  @@index([category])
+  @@index([latitude, longitude])
+  @@index([city])
+  @@map("providers")
+}
+
+// ─── SERVICE ────────────────────────────────────────────────────────
+
+model Service {
+  id          String        @id @default(cuid())
+  providerId  String
+  provider    Provider      @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  category    String
+  duration    Int           // in minutes
+  price       Float
+  currency    String        @default("INR")
+  status      ServiceStatus @default(ACTIVE)
+  capacity    Int           @default(1)  // concurrent bookings per slot
+  imageUrl    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  bookings Booking[]
+  reviews  Review[]
+
+  @@index([providerId])
+  @@index([category])
+  @@index([status])
+  @@map("services")
+}
+
+// ─── TIME SLOT ──────────────────────────────────────────────────────
+
+model TimeSlot {
+  id         String     @id @default(cuid())
+  providerId String
+  provider   Provider   @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  date       DateTime   @db.Date
+  startTime  String     // "09:00"
+  endTime    String     // "09:30"
+  status     SlotStatus @default(AVAILABLE)
+
+  // Lock mechanism for preventing double booking
+  lockedBy   String?    // userId who locked the slot
+  lockedAt   DateTime?  // when the lock was acquired
+  lockExpiry DateTime?  // 5-minute lock expiration
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  booking Booking?
+
+  @@unique([providerId, date, startTime])  // Prevent duplicate slots
+  @@index([providerId, date])
+  @@index([status])
+  @@index([lockExpiry])
+  @@map("time_slots")
+}
+
+// ─── BOOKING ────────────────────────────────────────────────────────
+
+model Booking {
+  id          String        @id @default(cuid())
+  customerId  String
+  customer    User          @relation("CustomerBookings", fields: [customerId], references: [id])
+  providerId  String
+  provider    Provider      @relation("ProviderBookings", fields: [providerId], references: [id])
+  serviceId   String
+  service     Service       @relation(fields: [serviceId], references: [id])
+  timeSlotId  String?       @unique
+  timeSlot    TimeSlot?     @relation(fields: [timeSlotId], references: [id])
+
+  date        DateTime      @db.Date
+  startTime   String
+  endTime     String
+  duration    Int           // in minutes
+  price       Float
+  currency    String        @default("INR")
+
+  status      BookingStatus @default(PENDING)
+  notes       String?
+
+  confirmedAt DateTime?
+  cancelledAt DateTime?
+  completedAt DateTime?
+  cancellationReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  payment Payment?
+  review  Review?
+
+  @@index([customerId])
+  @@index([providerId])
+  @@index([serviceId])
+  @@index([status])
+  @@index([date])
+  @@map("bookings")
+}
+
+// ─── PAYMENT ────────────────────────────────────────────────────────
+
+model Payment {
+  id              String        @id @default(cuid())
+  bookingId       String        @unique
+  booking         Booking       @relation(fields: [bookingId], references: [id])
+  userId          String
+  user            User          @relation(fields: [userId], references: [id])
+
+  // Razorpay fields
+  razorpayOrderId   String?     @unique
+  razorpayPaymentId String?     @unique
+  razorpaySignature String?
+
+  amount          Float
+  currency        String        @default("INR")
+  status          PaymentStatus @default(CREATED)
+  method          String?       // card, upi, netbanking, etc.
+
+  refundId        String?
+  refundAmount    Float?
+  refundReason    String?
+  refundedAt      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([razorpayOrderId])
+  @@map("payments")
+}
+
+// ─── REVIEW ─────────────────────────────────────────────────────────
+
+model Review {
+  id        String  @id @default(cuid())
+  bookingId String  @unique
+  booking   Booking @relation(fields: [bookingId], references: [id])
+  userId    String
+  user      User    @relation(fields: [userId], references: [id])
+  serviceId String
+  service   Service @relation(fields: [serviceId], references: [id])
+
+  rating    Int     // 1–5
+  comment   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([serviceId])
+  @@index([userId])
+  @@map("reviews")
+}

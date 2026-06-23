@@ -37,6 +37,7 @@ const services = [
     duration: 60,
     price: 150.00,
     bookings: 234,
+    reviewsCount: 387,
     trend: 12,
     status: 'active',
     icon: 'consultation'
@@ -48,6 +49,7 @@ const services = [
     duration: 180,
     price: 450.00,
     bookings: 89,
+    reviewsCount: 156,
     trend: 8,
     status: 'active',
     icon: 'workshop'
@@ -59,6 +61,7 @@ const services = [
     duration: 120,
     price: 275.00,
     bookings: 156,
+    reviewsCount: 243,
     trend: -3,
     status: 'paused',
     icon: 'audit'
@@ -70,6 +73,7 @@ const services = [
     duration: 90,
     price: 350.00,
     bookings: 67,
+    reviewsCount: 112,
     trend: 18,
     status: 'active',
     icon: 'premium'
@@ -81,6 +85,7 @@ const services = [
     duration: 90,
     price: 225.00,
     bookings: 112,
+    reviewsCount: 198,
     trend: 5,
     status: 'active',
     icon: 'audit'
@@ -92,6 +97,7 @@ const services = [
     duration: 45,
     price: 100.00,
     bookings: 298,
+    reviewsCount: 467,
     trend: 22,
     status: 'active',
     icon: 'workshop'
@@ -103,6 +109,7 @@ const services = [
     duration: 60,
     price: 85.00,
     bookings: 187,
+    reviewsCount: 294,
     trend: 15,
     status: 'active',
     icon: 'haircut',
@@ -115,6 +122,7 @@ const services = [
     duration: 90,
     price: 120.00,
     bookings: 143,
+    reviewsCount: 231,
     trend: 10,
     status: 'active',
     icon: 'tutor',
@@ -127,6 +135,7 @@ const services = [
     duration: 30,
     price: 45.00,
     bookings: 321,
+    reviewsCount: 512,
     trend: 20,
     status: 'active',
     icon: 'carwash',

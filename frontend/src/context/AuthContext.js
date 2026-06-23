@@ -44,32 +44,58 @@ export const AuthProvider = ({ children }) => {
     try {
       const response = await authAPI.login({ email, password });
       const { user, token, isFirstLogin: firstLogin } = response.data;
-      
+
       localStorage.setItem('flowgrid_token', token);
       setUser(user);
       setIsAuthenticated(true);
       setIsFirstLogin(firstLogin);
-      
+
       return { success: true, isFirstLogin: firstLogin, user };
     } catch (error) {
-      const message = error.response?.data?.error || 'Login failed';
-      return { success: false, error: message };
+      const data = error.response?.data;
+      if (data?.pendingVerification) {
+        return { success: false, error: data.error, pendingVerification: true, email: data.email };
+      }
+      return { success: false, error: data?.error || 'Login failed' };
     }
   }, []);
 
   const signup = useCallback(async (userData) => {
     try {
       const response = await authAPI.signup(userData);
-      const { user, token, isFirstLogin: firstLogin } = response.data;
-      
+      const data = response.data;
+
+      // Account created but email not yet verified — do NOT set auth state
+      if (data.pendingVerification) {
+        return { success: true, pendingVerification: true, email: data.email };
+      }
+
+      // Fallback: if somehow a token is returned (shouldn't happen with OTP flow)
+      const { user, token, isFirstLogin: firstLogin } = data;
       localStorage.setItem('flowgrid_token', token);
       setUser(user);
       setIsAuthenticated(true);
       setIsFirstLogin(firstLogin);
-      
       return { success: true, isFirstLogin: firstLogin, user };
     } catch (error) {
       const message = error.response?.data?.error || 'Signup failed';
+      return { success: false, error: message };
+    }
+  }, []);
+
+  const verifyOTP = useCallback(async (email, otp) => {
+    try {
+      const response = await authAPI.verifyOTP({ email, otp });
+      const { user, token, isFirstLogin: firstLogin } = response.data;
+
+      localStorage.setItem('flowgrid_token', token);
+      setUser(user);
+      setIsAuthenticated(true);
+      setIsFirstLogin(firstLogin);
+
+      return { success: true, isFirstLogin: firstLogin, user };
+    } catch (error) {
+      const message = error.response?.data?.error || 'Verification failed';
       return { success: false, error: message };
     }
   }, []);
@@ -132,6 +158,7 @@ export const AuthProvider = ({ children }) => {
     isCustomer,
     login,
     signup,
+    verifyOTP,
     logout,
     completeFirstLogin,
     updateProfile,

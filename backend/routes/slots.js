@@ -26,6 +26,7 @@ const initializeSlots = () => {
       capacity: 1,
       bookings: 145,
       rating: 4.8,
+      reviewsCount: 287,
       createdAt: '2025-03-15T00:00:00.000Z'
     },
     {
@@ -42,6 +43,7 @@ const initializeSlots = () => {
       capacity: 1,
       bookings: 98,
       rating: 4.7,
+      reviewsCount: 156,
       createdAt: '2025-03-15T00:00:00.000Z'
     },
     {
@@ -58,6 +60,7 @@ const initializeSlots = () => {
       capacity: 1,
       bookings: 67,
       rating: 4.9,
+      reviewsCount: 134,
       createdAt: '2025-04-01T00:00:00.000Z'
     },
     {
@@ -74,6 +77,7 @@ const initializeSlots = () => {
       capacity: 1,
       bookings: 156,
       rating: 4.9,
+      reviewsCount: 342,
       createdAt: '2025-04-20T00:00:00.000Z'
     },
     {
@@ -90,6 +94,7 @@ const initializeSlots = () => {
       capacity: 1,
       bookings: 89,
       rating: 4.8,
+      reviewsCount: 178,
       createdAt: '2025-05-01T00:00:00.000Z'
     }
   ];
@@ -190,24 +195,71 @@ router.get('/available', (req, res) => {
   }
 
   const service = serviceId ? providerServices.find(s => s.id === serviceId) : null;
-  const slotDuration = service ? service.duration : 30;
+  const serviceDuration = service ? service.duration : 30;
 
-  const availableSlots = timeSlots.filter(slot => 
-    slot.date === date && 
-    slot.providerId === providerId && 
-    slot.status === 'available' &&
-    slot.duration >= slotDuration
-  );
+  // Helper function to convert time string to minutes since midnight
+  const timeToMinutes = (timeStr) => {
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    return hours * 60 + minutes;
+  };
+
+  // Helper function to convert minutes to time string
+  const minutesToTime = (minutes) => {
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+  };
+
+  // Helper function to check if two time ranges overlap
+  const hasOverlap = (start1, end1, start2, end2) => {
+    return start1 < end2 && start2 < end1;
+  };
+
+  // Get all confirmed and pending bookings for this provider on this date
+  // Only check bookings that are confirmed (paid) or pending (awaiting payment)
+  const bookedSlots = customerBookings.filter(booking => 
+    booking.providerId === providerId && 
+    booking.date === date && 
+    (booking.status === 'confirmed' || booking.status === 'pending')
+  ).map(booking => ({
+    startTime: timeToMinutes(booking.time),
+    endTime: timeToMinutes(booking.time) + booking.duration
+  }));
+
+  // Generate potential time slots (every 30 minutes from 9 AM to 6 PM)
+  const workStartMinutes = 9 * 60; // 9:00 AM
+  const workEndMinutes = 18 * 60; // 6:00 PM
+  const slotInterval = 30; // Generate slots every 30 minutes
+  
+  const availableSlots = [];
+
+  for (let startMinutes = workStartMinutes; startMinutes < workEndMinutes; startMinutes += slotInterval) {
+    const endMinutes = startMinutes + serviceDuration;
+    
+    // Skip if service would end after work hours
+    if (endMinutes > workEndMinutes) {
+      continue;
+    }
+
+    // Check if this slot overlaps with any booked slots
+    const isAvailable = !bookedSlots.some(booked => 
+      hasOverlap(startMinutes, endMinutes, booked.startTime, booked.endTime)
+    );
+
+    if (isAvailable) {
+      availableSlots.push({
+        id: `SLOT-${date}-${minutesToTime(startMinutes)}`,
+        time: minutesToTime(startMinutes),
+        duration: serviceDuration,
+        available: true
+      });
+    }
+  }
 
   res.json({
     date,
     providerId,
-    slots: availableSlots.map(slot => ({
-      id: slot.id,
-      time: slot.time,
-      duration: slot.duration,
-      available: true
-    }))
+    slots: availableSlots
   });
 });
 
@@ -225,33 +277,43 @@ router.post('/book', authenticateToken, (req, res) => {
     return res.status(404).json({ error: 'Service not found' });
   }
 
-  // Find the slot
-  let slot = timeSlots.find(s => 
-    s.date === date && 
-    s.time === time && 
-    s.providerId === providerId
+  // Helper function to convert time string to minutes since midnight
+  const timeToMinutes = (timeStr) => {
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    return hours * 60 + minutes;
+  };
+
+  // Helper function to check if two time ranges overlap
+  const hasOverlap = (start1, end1, start2, end2) => {
+    return start1 < end2 && start2 < end1;
+  };
+
+  // Calculate the time range for this booking
+  const bookingStartMinutes = timeToMinutes(time);
+  const bookingEndMinutes = bookingStartMinutes + service.duration;
+
+  // Check if this time slot overlaps with any existing confirmed or pending bookings
+  const hasConflict = customerBookings.some(booking => 
+    booking.providerId === providerId && 
+    booking.date === date && 
+    (booking.status === 'confirmed' || booking.status === 'pending') &&
+    hasOverlap(
+      bookingStartMinutes, 
+      bookingEndMinutes,
+      timeToMinutes(booking.time),
+      timeToMinutes(booking.time) + booking.duration
+    )
   );
 
-  // ATOMIC: Check if slot is available
-  if (!slot) {
-    return res.status(404).json({ error: 'Time slot not found' });
-  }
-
-  if (slot.status === 'booked') {
+  if (hasConflict) {
     return res.status(409).json({ 
       error: 'Slot already booked',
       message: 'This time slot has already been booked by another customer. Please select a different time.'
     });
   }
 
-  // TRANSACTIONAL: Lock the slot immediately
+  // TRANSACTIONAL: Create the booking
   const bookingId = `BKG-${uuidv4().slice(0, 6).toUpperCase()}`;
-  
-  // Update slot atomically
-  slot.status = 'booked';
-  slot.bookedBy = req.user.id;
-  slot.bookingId = bookingId;
-  slot.lockedAt = new Date().toISOString();
 
   // Create booking record
   const booking = {
@@ -270,7 +332,6 @@ router.post('/book', authenticateToken, (req, res) => {
     price: service.price,
     currency: service.currency,
     status: 'pending', // Awaiting payment
-    slotId: slot.id,
     createdAt: new Date().toISOString()
   };
 
@@ -307,12 +368,6 @@ router.post('/confirm/:bookingId', authenticateToken, (req, res) => {
   booking.paymentId = paymentId;
   booking.confirmedAt = new Date().toISOString();
 
-  // Update slot status
-  const slot = timeSlots.find(s => s.id === booking.slotId);
-  if (slot) {
-    slot.status = 'confirmed';
-  }
-
   res.json({
     success: true,
     message: 'Booking confirmed!',
@@ -337,13 +392,8 @@ router.post('/cancel/:bookingId', authenticateToken, (req, res) => {
     return res.status(403).json({ error: 'Not authorized' });
   }
 
-  // Release the slot
-  const slot = timeSlots.find(s => s.id === booking.slotId);
-  if (slot) {
-    slot.status = 'available';
-    slot.bookedBy = null;
-    slot.bookingId = null;
-  }
+  // Store the previous status for refund eligibility check
+  const wasConfirmed = booking.status === 'confirmed';
 
   // Update booking
   booking.status = 'cancelled';
@@ -354,7 +404,7 @@ router.post('/cancel/:bookingId', authenticateToken, (req, res) => {
     success: true,
     message: 'Booking cancelled',
     booking,
-    refundEligible: booking.status === 'confirmed'
+    refundEligible: wasConfirmed
   });
 });
 
@@ -401,32 +451,34 @@ router.get('/provider/schedule', authenticateToken, (req, res) => {
 
   const { date, startDate, endDate } = req.query;
 
-  let providerSlots = timeSlots.filter(s => s.providerId === req.user.id);
+  // Get all bookings for this provider
+  let providerBookings = customerBookings.filter(b => 
+    b.providerId === req.user.id &&
+    (b.status === 'confirmed' || b.status === 'pending')
+  );
 
   if (date) {
-    providerSlots = providerSlots.filter(s => s.date === date);
+    providerBookings = providerBookings.filter(b => b.date === date);
   }
 
   if (startDate) {
-    providerSlots = providerSlots.filter(s => s.date >= startDate);
+    providerBookings = providerBookings.filter(b => b.date >= startDate);
   }
 
   if (endDate) {
-    providerSlots = providerSlots.filter(s => s.date <= endDate);
+    providerBookings = providerBookings.filter(b => b.date <= endDate);
   }
 
-  // Get bookings for these slots
-  const schedule = providerSlots.map(slot => {
-    const booking = customerBookings.find(b => b.slotId === slot.id);
-    return {
-      ...slot,
-      booking: booking || null
-    };
+  // Sort by date and time
+  providerBookings.sort((a, b) => {
+    const dateCompare = a.date.localeCompare(b.date);
+    if (dateCompare !== 0) return dateCompare;
+    return a.time.localeCompare(b.time);
   });
 
   res.json({
-    data: schedule,
-    total: schedule.length
+    data: providerBookings,
+    total: providerBookings.length
   });
 });
 
@@ -456,6 +508,7 @@ router.post('/provider/service', authenticateToken, (req, res) => {
     capacity: 1,
     bookings: 0,
     rating: 0,
+    reviewsCount: 0,
     createdAt: new Date().toISOString()
   };
 
@@ -520,46 +573,24 @@ router.delete('/provider/service/:serviceId', authenticateToken, (req, res) => {
 });
 
 // POST /api/slots/provider/slots - Create time slots (Provider only)
+// Note: Slots are now dynamically generated based on bookings,
+// but keeping this endpoint for backward compatibility
 router.post('/provider/slots', authenticateToken, (req, res) => {
   if (req.user.role === 'customer') {
     return res.status(403).json({ error: 'Only providers can create slots' });
   }
 
-  const { date, slots } = req.body; // slots is array of {time, duration}
+  const { date, slots } = req.body;
 
   if (!date || !slots || !Array.isArray(slots)) {
     return res.status(400).json({ error: 'Date and slots array are required' });
   }
 
-  const createdSlots = [];
-
-  slots.forEach(({ time, duration = 30 }) => {
-    // Check if slot already exists
-    const existing = timeSlots.find(
-      s => s.date === date && s.time === time && s.providerId === req.user.id
-    );
-
-    if (!existing) {
-      const newSlot = {
-        id: `SLOT-${uuidv4().slice(0, 8)}`,
-        providerId: req.user.id,
-        date,
-        time,
-        duration,
-        status: 'available',
-        capacity: 1,
-        bookedBy: null,
-        bookingId: null
-      };
-      timeSlots.push(newSlot);
-      createdSlots.push(newSlot);
-    }
-  });
-
+  // Slots are now generated dynamically, so we just acknowledge the request
   res.status(201).json({
     success: true,
-    message: `${createdSlots.length} slots created`,
-    slots: createdSlots
+    message: 'Slots are now generated automatically based on your services and bookings',
+    info: 'No manual slot creation needed. Available slots are calculated dynamically to avoid conflicts.'
   });
 });
 

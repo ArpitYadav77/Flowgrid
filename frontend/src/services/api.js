@@ -43,6 +43,8 @@ api.interceptors.response.use(
 export const authAPI = {
   login: (data) => api.post('/auth/login', data),
   signup: (data) => api.post('/auth/signup', data),
+  verifyOTP: (data) => api.post('/auth/verify-otp', data),
+  resendOTP: (data) => api.post('/auth/resend-otp', data),
   logout: () => api.post('/auth/logout'),
   me: () => api.get('/auth/me'),
   updateProfile: (data) => api.put('/auth/profile', data),
@@ -134,6 +136,14 @@ export const unsplashAPI = {
   search: (query, perPage = 10) => api.get('/unsplash/search', { params: { query, perPage } }),
   getRandom: (query) => api.get('/unsplash/random', { params: { query } }),
   getServiceImages: () => api.get('/unsplash/service-images'),
+};
+
+// Chatbot API
+export const chatbotAPI = {
+  sendMessage: (message) => api.post('/chatbot/message', { message }),
+  getSession: () => api.get('/chatbot/session'),
+  resetSession: () => api.post('/chatbot/reset'),
+  getServices: () => api.get('/chatbot/services'),
 };
 
 export default api;

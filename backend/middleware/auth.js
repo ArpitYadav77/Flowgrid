@@ -1,6 +1,9 @@
 const jwt = require('jsonwebtoken');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'flowgrid-secret-key-2026';
+if (!process.env.JWT_SECRET) {
+  console.warn('[WARN] JWT_SECRET is not set in .env — using insecure fallback. Set a strong secret in production.');
+}
+const JWT_SECRET = process.env.JWT_SECRET || 'flowgrid-dev-fallback-secret-change-me';
 
 // Middleware to verify JWT token
 const authenticateToken = (req, res, next) => {
@@ -45,7 +48,7 @@ const generateToken = (user) => {
       name: user.name
     },
     JWT_SECRET,
-    { expiresIn: '7d' }
+    { expiresIn: '24h' }
   );
 };
 

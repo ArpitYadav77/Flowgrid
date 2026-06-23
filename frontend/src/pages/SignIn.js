@@ -14,6 +14,7 @@ const SignIn = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [pendingEmail, setPendingEmail] = useState('');
 
   const handleChange = (e) => {
     setFormData({
@@ -21,6 +22,7 @@ const SignIn = () => {
       [e.target.name]: e.target.value
     });
     setError('');
+    setPendingEmail('');
   };
 
   const handleSubmit = async (e) => {
@@ -29,25 +31,30 @@ const SignIn = () => {
     setError('');
 
     const result = await login(formData.email, formData.password);
-    
+
     if (result.success) {
       if (result.isFirstLogin) {
         navigate('/welcome');
       } else {
         navigate('/dashboard');
       }
+    } else if (result.pendingVerification) {
+      // Store the email and show a verify button — don't rely solely on navigate
+      setPendingEmail(result.email || formData.email);
+      setError(result.error);
+      navigate('/verify-email', { state: { email: result.email || formData.email } });
     } else {
       setError(result.error);
     }
-    
+
     setLoading(false);
   };
 
   // Demo accounts
   const demoAccounts = [
-    { email: 'customer@flowgrid.com', password: 'password123', role: 'Customer' },
-    { email: 'salon@flowgrid.com', password: 'password123', role: 'Salon Owner' },
-    { email: 'tutor@flowgrid.com', password: 'password123', role: 'Tutor' }
+    { email: 'customer@flowgrid.com', password: 'Demo@1234', role: 'Customer' },
+    { email: 'salon@flowgrid.com',    password: 'Demo@1234', role: 'Salon Owner' },
+    { email: 'tutor@flowgrid.com',    password: 'Demo@1234', role: 'Tutor' }
   ];
 
   const fillDemoAccount = (account) => {
@@ -120,6 +127,41 @@ const SignIn = () => {
               <div className="auth-error">
                 <Icons.AlertCircle />
                 <span>{error}</span>
+              </div>
+            )}
+
+            {pendingEmail && (
+              <div style={{
+                background: '#fffbeb',
+                border: '1px solid #fbbf24',
+                borderRadius: 10,
+                padding: '12px 16px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 12,
+                marginBottom: 8
+              }}>
+                <span style={{ fontSize: 13, color: '#92400e' }}>
+                  Your email is not verified.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => navigate('/verify-email', { state: { email: pendingEmail } })}
+                  style={{
+                    background: '#f59e0b',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: 7,
+                    padding: '6px 14px',
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  Verify now →
+                </button>
               </div>
             )}
 

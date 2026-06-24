@@ -2,18 +2,48 @@
 
 const nodemailer = require('nodemailer');
 
-const smtpPort = parseInt(process.env.SMTP_PORT || '465');
-const transporter = nodemailer.createTransport({
+// ─── SMTP Configuration ────────────────────────────────────────────
+
+const smtpPort = parseInt(process.env.SMTP_PORT || '587');
+
+const smtpConfig = {
   host: process.env.SMTP_HOST || 'smtp.gmail.com',
   port: smtpPort,
-  secure: smtpPort === 465,
+  secure: smtpPort === 465, // true for 465 (SSL), false for 587 (STARTTLS)
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   },
-});
+  // Connection timeouts to prevent hanging on cloud platforms
+  connectionTimeout: 10000, // 10 seconds
+  greetingTimeout: 10000,
+  socketTimeout: 15000,
+};
+
+// Log SMTP config at startup (mask password)
+console.log('\n📧 [SMTP] Configuration:');
+console.log(`   Host    : ${smtpConfig.host}`);
+console.log(`   Port    : ${smtpConfig.port}`);
+console.log(`   Secure  : ${smtpConfig.secure}`);
+console.log(`   User    : ${smtpConfig.auth.user || '⚠️  NOT SET'}`);
+console.log(`   Pass    : ${smtpConfig.auth.pass ? '****' + smtpConfig.auth.pass.slice(-4) : '⚠️  NOT SET'}`);
+
+const transporter = nodemailer.createTransport(smtpConfig);
 
 const FROM_ADDRESS = `"FlowGrid 📅" <${process.env.SMTP_USER || 'your@gmail.com'}>`;
+
+// ─── Verify SMTP Connection on Startup ──────────────────────────────
+
+transporter.verify()
+  .then(() => {
+    console.log('✅ [SMTP] Connection verified — emails are ready to send!\n');
+  })
+  .catch((err) => {
+    console.error('❌ [SMTP] Connection FAILED:', err.message);
+    console.error('   Check your SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS env vars.');
+    console.error('   For Gmail: use an App Password (not your account password).');
+    console.error('   Make sure 2-Step Verification is enabled on your Google account.\n');
+  });
 
 // ─── Email Templates ────────────────────────────────────────────────
 
@@ -79,7 +109,9 @@ const sendOTPEmail = async (to, otp) => {
     </div>
   `;
 
-  return sendMail(to, "🎉 You're in! Welcome to FlowGrid — your business just got a glow-up", html);
+  const text = `Welcome to FlowGrid!\n\nYour verification code is: ${otp}\n\nThis code expires in 5 minutes.\n\nVerify here: ${frontendUrl}/verify-email?email=${encodeURIComponent(to)}`;
+
+  return sendMail(to, "🎉 You're in! Welcome to FlowGrid — your business just got a glow-up", html, text);
 };
 
 /**
@@ -190,20 +222,30 @@ const sendProviderNewBooking = async (to, booking, customerName) => {
 
 // ─── Core Send Function ─────────────────────────────────────────────
 
-const sendMail = async (to, subject, html) => {
+const sendMail = async (to, subject, html, text) => {
+  // Guard: check credentials exist
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    console.error('❌ [SMTP] Cannot send email — SMTP_USER or SMTP_PASS not set in environment variables!');
+    throw new Error('SMTP credentials not configured');
+  }
+
   try {
+    console.log(`📧 [SMTP] Attempting to send email to ${to}...`);
     const result = await transporter.sendMail({
       from: FROM_ADDRESS,
       to,
       subject,
       html,
+      ...(text && { text }),
     });
-    console.log(`📧 Email sent to ${to}: ${subject}`);
+    console.log(`✅ [SMTP] Email sent to ${to} | MessageId: ${result.messageId}`);
     return result;
   } catch (error) {
-    console.warn(`📧 Email delivery failed to ${to}: ${error.message}`);
-    console.warn('   Configure SMTP_HOST/SMTP_USER/SMTP_PASS in .env to enable email delivery.');
-    // Don't throw — email failures shouldn't break the flow
+    console.error(`❌ [SMTP] Email FAILED to ${to}: ${error.message}`);
+    console.error(`   Error code: ${error.code || 'N/A'}`);
+    console.error(`   Full error:`, error);
+    // Re-throw so callers know it failed
+    throw error;
   }
 };
 

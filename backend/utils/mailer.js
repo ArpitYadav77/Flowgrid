@@ -1,6 +1,6 @@
 const nodemailer = require('nodemailer');
 
-const smtpPort = parseInt(process.env.SMTP_PORT || '465');
+const smtpPort = parseInt(process.env.SMTP_PORT || '587');
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST || 'smtp.gmail.com',
   port: smtpPort,
@@ -8,7 +8,10 @@ const transporter = nodemailer.createTransport({
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS
-  }
+  },
+  connectionTimeout: 10000,
+  greetingTimeout: 10000,
+  socketTimeout: 15000,
 });
 
 /**
@@ -17,11 +20,19 @@ const transporter = nodemailer.createTransport({
  * @param {string} otp - 6-digit OTP code
  */
 const sendOTPEmail = async (to, otp) => {
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    console.error('❌ [SMTP] Cannot send email — SMTP_USER or SMTP_PASS not set!');
+    throw new Error('SMTP credentials not configured');
+  }
+
   const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-  await transporter.sendMail({
-    from: `"FlowGrid 📅" <${process.env.SMTP_USER || 'your@gmail.com'}>`,
+  console.log(`📧 [SMTP] Attempting to send OTP email to ${to}...`);
+
+  const result = await transporter.sendMail({
+    from: `"FlowGrid 📅" <${process.env.SMTP_USER}>`,
     to,
     subject: "🎉 You're in! Welcome to FlowGrid — your business just got a glow-up",
+    text: `Welcome to FlowGrid!\n\nYour verification code is: ${otp}\n\nThis code expires in 5 minutes.\n\nVerify here: ${frontendUrl}/verify-email?email=${encodeURIComponent(to)}`,
     html: `
       <div style="background:#0d2b2b; color:#fff; font-family:sans-serif; padding:40px; border-radius:12px; max-width: 520px; margin: 32px auto; box-shadow: 0 4px 20px rgba(0,0,0,0.15);">
         <h1 style="color:#c9a84c; margin-top:0;">Welcome to FlowGrid 🎉</h1>
@@ -44,6 +55,9 @@ const sendOTPEmail = async (to, otp) => {
       </div>
     `
   });
+
+  console.log(`✅ [SMTP] Email sent to ${to} | MessageId: ${result.messageId}`);
+  return result;
 };
 
 module.exports = { sendOTPEmail };

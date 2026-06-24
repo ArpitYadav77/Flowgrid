@@ -3,7 +3,7 @@
 const bcrypt = require('bcryptjs');
 const prisma = require('../config/database');
 const { generateAccessToken, generateRefreshToken, revokeAllTokens } = require('../middleware/auth');
-const { sendOTPEmail, verifySMTPConnection } = require('../services/notification.service');
+const { sendOTPEmail, verifyEmailConfig } = require('../services/notification.service');
 const { AppError } = require('../middleware/errorHandler');
 const crypto = require('crypto');
 
@@ -351,11 +351,11 @@ const completeFirstLogin = async (req, res, next) => {
 const testSMTP = async (req, res, next) => {
   try {
     const testEmail = req.query.email;
-    const diagnostics = await verifySMTPConnection();
+    const diagnostics = await verifyEmailConfig();
     
     if (testEmail) {
       try {
-        console.log(`[SMTP TEST] Sending test OTP to ${testEmail}`);
+        console.log(`[Email TEST] Sending test OTP to ${testEmail}`);
         const result = await sendOTPEmail(testEmail, '123456');
         diagnostics.sendTest = {
           success: true,

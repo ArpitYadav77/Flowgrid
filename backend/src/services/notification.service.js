@@ -1,101 +1,8 @@
-// ─── Notification Service — Email via NodeMailer ────────────────────
+// ─── Notification Service — Email via Resend SDK ────────────────────
 
-const nodemailer = require('nodemailer');
-const dns = require('dns');
-const axios = require('axios');
+const { Resend } = require('resend');
 
-// Force Node.js to prefer IPv4 over IPv6 when resolving hostnames.
-// Modern Node.js versions on cloud environments (like Render/Vercel) often attempt
-// to connect via IPv6 first, leading to ENETUNREACH errors.
-if (dns.setDefaultResultOrder) {
-  dns.setDefaultResultOrder('ipv4first');
-}
-process.env.NODEJS_PREFER_IPV4 = '1';
-
-// ─── SMTP Configuration ────────────────────────────────────────────
-
-let transporter = null;
-let resolvedSmtpHost = null;
-
-const getTransporter = async () => {
-  if (transporter) return transporter;
-
-  const originalHost = process.env.SMTP_HOST || 'smtp.gmail.com';
-  let hostIp = originalHost;
-
-  // Render/Vercel IPv6 workaround: Resolve hostname to IPv4 address to bypass ENETUNREACH
-  if (!process.env.RESEND_API_KEY && !process.env.SENDGRID_API_KEY) {
-    try {
-      const dnsPromises = require('dns').promises;
-      const ipAddresses = await dnsPromises.resolve4(originalHost);
-      if (ipAddresses && ipAddresses.length > 0) {
-        hostIp = ipAddresses[0];
-        resolvedSmtpHost = hostIp;
-        console.log(`📡 [DNS] Resolved SMTP host ${originalHost} -> IPv4 ${hostIp}`);
-      }
-    } catch (dnsErr) {
-      console.warn(`⚠️ [DNS] Failed to resolve ${originalHost} to IPv4: ${dnsErr.message}. Falling back to default hostname.`);
-    }
-  }
-
-  const smtpPort = parseInt(process.env.SMTP_PORT || '587');
-  const smtpConfig = {
-    host: hostIp,
-    port: smtpPort,
-    secure: smtpPort === 465, // true for 465 (SSL), false for 587 (STARTTLS)
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-    // TLS options for cloud platform compatibility
-    tls: {
-      rejectUnauthorized: false, // Allow self-signed certs on cloud platforms
-      minVersion: 'TLSv1.2',
-      servername: originalHost, // CRITICAL: Required for TLS verification when connecting via IP address
-    },
-    // Connection timeouts to prevent hanging on cloud platforms
-    connectionTimeout: 15000, // 15 seconds
-    greetingTimeout: 15000,
-    socketTimeout: 20000,
-    // Enable debug logging if SMTP_DEBUG=true
-    debug: process.env.SMTP_DEBUG === 'true',
-    logger: process.env.SMTP_DEBUG === 'true',
-  };
-
-  // Log SMTP config at initialization (mask password)
-  console.log('\n📧 [SMTP] Initializing Transporter:');
-  console.log(`   Host (Original) : ${originalHost}`);
-  console.log(`   Host (Resolved) : ${smtpConfig.host}`);
-  console.log(`   Port            : ${smtpConfig.port}`);
-  console.log(`   Secure          : ${smtpConfig.secure}`);
-  console.log(`   User            : ${smtpConfig.auth.user || '⚠️  NOT SET'}`);
-  console.log(`   Pass            : ${smtpConfig.auth.pass ? '****' + smtpConfig.auth.pass.slice(-4) : '⚠️  NOT SET'}`);
-
-  transporter = nodemailer.createTransport(smtpConfig);
-  return transporter;
-};
-
-const FROM_ADDRESS = `"FlowGrid 📅" <${process.env.SMTP_USER || 'your@gmail.com'}>`;
-
-// ─── Verify Connection on Startup ──────────────────────────────
-
-if (!process.env.RESEND_API_KEY && !process.env.SENDGRID_API_KEY) {
-  getTransporter()
-    .then((t) => t.verify())
-    .then(() => {
-      console.log('✅ [SMTP] Connection verified — emails are ready to send!\n');
-    })
-    .catch((err) => {
-      console.error('❌ [SMTP] Connection FAILED:', err.message);
-      console.error('   Error code:', err.code || 'N/A');
-      console.error('   Full error:', JSON.stringify(err, null, 2));
-      console.error('   Check your SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS env vars.');
-      console.error('   For Gmail: use an App Password (not your account password).');
-      console.error('   Make sure 2-Step Verification is enabled on your Google account.\n');
-    });
-} else {
-  console.log(`\n📡 [Email] Mode active: ${process.env.RESEND_API_KEY ? 'Resend' : 'SendGrid'} API over HTTPS (bypasses Render port blocks)\n`);
-}
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 
 // ─── Email Templates ────────────────────────────────────────────────
 
@@ -275,156 +182,43 @@ const sendProviderNewBooking = async (to, booking, customerName) => {
 // ─── Core Send Function ─────────────────────────────────────────────
 
 const sendMail = async (to, subject, html, text) => {
-  // Option A: Resend API (HTTPS - bypasses port blocks)
-  if (process.env.RESEND_API_KEY) {
-    try {
-      console.log(`📧 [SMTP/API] Attempting to send email via Resend API to ${to}...`);
-      const fromEmail = process.env.SMTP_USER || 'onboarding@resend.dev';
-      const result = await axios.post('https://api.resend.com/emails', {
-        from: `FlowGrid 📅 <${fromEmail}>`,
-        to: [to],
-        subject,
-        html,
-        ...(text && { text }),
-      }, {
-        headers: {
-          'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
-          'Content-Type': 'application/json',
-        }
-      });
-      console.log(`✅ [SMTP/API] Email sent via Resend API to ${to} | ID: ${result.data.id}`);
-      return { messageId: result.data.id };
-    } catch (error) {
-      const errMsg = error.response?.data?.message || error.message;
-      console.error(`❌ [SMTP/API] Resend API FAILED to ${to}: ${errMsg}`);
-      throw new Error(`Resend API failed: ${errMsg}`);
-    }
-  }
-
-  // Option B: SendGrid API (HTTPS - bypasses port blocks)
-  if (process.env.SENDGRID_API_KEY) {
-    try {
-      console.log(`📧 [SMTP/API] Attempting to send email via SendGrid API to ${to}...`);
-      const fromEmail = process.env.SMTP_USER || 'no-reply@flowgrid.com';
-      const result = await axios.post('https://api.sendgrid.com/v3/mail/send', {
-        personalizations: [{ to: [{ email: to }] }],
-        from: { email: fromEmail, name: 'FlowGrid 📅' },
-        subject,
-        content: [
-          ...(text ? [{ type: 'text/plain', value: text }] : []),
-          { type: 'text/html', value: html }
-        ]
-      }, {
-        headers: {
-          'Authorization': `Bearer ${process.env.SENDGRID_API_KEY}`,
-          'Content-Type': 'application/json',
-        }
-      });
-      console.log(`✅ [SMTP/API] Email sent via SendGrid API to ${to}`);
-      return { messageId: result.headers['x-message-id'] || 'SendGrid-Success' };
-    } catch (error) {
-      const errMsg = JSON.stringify(error.response?.data || error.message);
-      console.error(`❌ [SMTP/API] SendGrid API FAILED to ${to}: ${errMsg}`);
-      throw new Error(`SendGrid API failed: ${errMsg}`);
-    }
-  }
-
-  // Option C: Standard NodeMailer (SMTP)
-  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    console.error('❌ [SMTP] Cannot send email — SMTP_USER or SMTP_PASS not set in environment variables!');
-    throw new Error('SMTP credentials not configured');
+  if (!resend) {
+    console.error('❌ [Resend] Cannot send email — RESEND_API_KEY not set in environment variables!');
+    throw new Error('Resend API key not configured');
   }
 
   try {
-    console.log(`📧 [SMTP] Attempting to send email via SMTP to ${to}...`);
-    const activeTransporter = await getTransporter();
-    const result = await activeTransporter.sendMail({
-      from: FROM_ADDRESS,
-      to,
+    console.log(`📧 [Resend] Attempting to send email to ${to}...`);
+    const { data, error } = await resend.emails.send({
+      from: 'FlowGrid <onboarding@resend.dev>',
+      to: [to],
       subject,
       html,
       ...(text && { text }),
     });
-    console.log(`✅ [SMTP] Email sent to ${to} | MessageId: ${result.messageId}`);
-    return result;
+
+    if (error) {
+      console.error(`❌ [Resend] Email FAILED to ${to}: ${error.message}`);
+      throw new Error(error.message);
+    }
+
+    console.log(`✅ [Resend] Email sent to ${to} | ID: ${data?.id}`);
+    return { messageId: data?.id };
   } catch (error) {
-    console.error(`❌ [SMTP] Email FAILED to ${to}: ${error.message}`);
-    console.error(`   Error code: ${error.code || 'N/A'}`);
-    console.error(`   Full error:`, error);
-    // Re-throw so callers know it failed
+    console.error(`❌ [Resend] Email FAILED to ${to}: ${error.message}`);
     throw error;
   }
 };
 
-const verifySMTPConnection = async () => {
-  if (process.env.RESEND_API_KEY) {
-    return {
-      success: true,
-      mode: 'Resend API',
-      message: 'Resend API key detected. Emails will be sent over HTTPS (bypasses Render port blocks).',
-      config: {
-        host: 'api.resend.com (HTTPS)',
-        port: 443,
-        user: process.env.SMTP_USER || 'onboarding@resend.dev',
-      }
-    };
-  }
-
-  if (process.env.SENDGRID_API_KEY) {
-    return {
-      success: true,
-      mode: 'SendGrid API',
-      message: 'SendGrid API key detected. Emails will be sent over HTTPS (bypasses Render port blocks).',
-      config: {
-        host: 'api.sendgrid.com (HTTPS)',
-        port: 443,
-        user: process.env.SMTP_USER || 'no-reply@flowgrid.com',
-      }
-    };
-  }
-
-  try {
-    const activeTransporter = await getTransporter();
-    await activeTransporter.verify();
-    
-    const originalHost = process.env.SMTP_HOST || 'smtp.gmail.com';
-    const smtpPort = parseInt(process.env.SMTP_PORT || '587');
-    
-    return {
-      success: true,
-      mode: 'SMTP',
-      message: 'SMTP Connection verified successfully',
-      config: {
-        host: originalHost,
-        resolvedHost: resolvedSmtpHost || originalHost,
-        port: smtpPort,
-        secure: smtpPort === 465,
-        user: process.env.SMTP_USER ? `${process.env.SMTP_USER.slice(0, 3)}...` : 'NOT_SET',
-        passLength: process.env.SMTP_PASS ? process.env.SMTP_PASS.length : 0,
-      }
-    };
-  } catch (error) {
-    const originalHost = process.env.SMTP_HOST || 'smtp.gmail.com';
-    const smtpPort = parseInt(process.env.SMTP_PORT || '587');
-    
-    return {
-      success: false,
-      mode: 'SMTP',
-      error: error.message,
-      code: error.code,
-      command: error.command,
-      response: error.response,
-      stack: error.stack,
-      config: {
-        host: originalHost,
-        resolvedHost: resolvedSmtpHost || originalHost,
-        port: smtpPort,
-        secure: smtpPort === 465,
-        user: process.env.SMTP_USER ? `${process.env.SMTP_USER.slice(0, 3)}...` : 'NOT_SET',
-        passLength: process.env.SMTP_PASS ? process.env.SMTP_PASS.length : 0,
-      }
-    };
-  }
+const verifyEmailConfig = async () => {
+  const hasKey = !!process.env.RESEND_API_KEY;
+  return {
+    success: hasKey,
+    mode: 'RESEND',
+    message: hasKey 
+      ? 'Resend API key is configured.' 
+      : 'RESEND_API_KEY is missing or empty in environment variables.',
+  };
 };
 
 module.exports = {
@@ -432,5 +226,5 @@ module.exports = {
   sendBookingConfirmation,
   sendBookingCancellation,
   sendProviderNewBooking,
-  verifySMTPConnection,
+  verifyEmailConfig,
 };

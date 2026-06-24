@@ -1,66 +1,18 @@
-const nodemailer = require('nodemailer');
-const dns = require('dns');
-const axios = require('axios');
+const { Resend } = require('resend');
 
-// Force Node.js to prefer IPv4 over IPv6 when resolving hostnames.
-// Modern Node.js versions on cloud environments (like Render/Vercel) often attempt
-// to connect via IPv6 first, leading to ENETUNREACH errors.
-if (dns.setDefaultResultOrder) {
-  dns.setDefaultResultOrder('ipv4first');
-}
-process.env.NODEJS_PREFER_IPV4 = '1';
-
-let transporter = null;
-
-const getTransporter = async () => {
-  if (transporter) return transporter;
-
-  const originalHost = process.env.SMTP_HOST || 'smtp.gmail.com';
-  let hostIp = originalHost;
-
-  // Render/Vercel IPv6 workaround: Resolve hostname to IPv4 address to bypass ENETUNREACH
-  if (!process.env.RESEND_API_KEY && !process.env.SENDGRID_API_KEY) {
-    try {
-      const dnsPromises = require('dns').promises;
-      const ipAddresses = await dnsPromises.resolve4(originalHost);
-      if (ipAddresses && ipAddresses.length > 0) {
-        hostIp = ipAddresses[0];
-        console.log(`📡 [DNS] Resolved SMTP host ${originalHost} -> IPv4 ${hostIp}`);
-      }
-    } catch (dnsErr) {
-      console.warn(`⚠️ [DNS] Failed to resolve ${originalHost} to IPv4: ${dnsErr.message}. Falling back to default hostname.`);
-    }
-  }
-
-  const smtpPort = parseInt(process.env.SMTP_PORT || '587');
-  const smtpConfig = {
-    host: hostIp,
-    port: smtpPort,
-    secure: smtpPort === 465,
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS
-    },
-    tls: {
-      rejectUnauthorized: false,
-      minVersion: 'TLSv1.2',
-      servername: originalHost, // REQUIRED for SSL validation when using IP address
-    },
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 15000,
-  };
-
-  transporter = nodemailer.createTransport(smtpConfig);
-  return transporter;
-};
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 
 /**
- * Sends an OTP verification email.
+ * Sends an OTP verification email using Resend SDK.
  * @param {string} to  - Recipient email address
  * @param {string} otp - 6-digit OTP code
  */
 const sendOTPEmail = async (to, otp) => {
+  if (!resend) {
+    console.error('❌ [Resend] Cannot send email — RESEND_API_KEY not set!');
+    throw new Error('Resend API key not configured');
+  }
+
   const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
   const subject = "🎉 You're in! Welcome to FlowGrid — your business just got a glow-up";
   const text = `Welcome to FlowGrid!\n\nYour verification code is: ${otp}\n\nThis code expires in 5 minutes.\n\nVerify here: ${frontendUrl}/verify-email?email=${encodeURIComponent(to)}`;
@@ -86,78 +38,23 @@ const sendOTPEmail = async (to, otp) => {
     </div>
   `;
 
-  // Option A: Resend API (HTTPS - bypasses port blocks)
-  if (process.env.RESEND_API_KEY) {
-    try {
-      console.log(`📧 [SMTP/API] Attempting to send OTP email via Resend API to ${to}...`);
-      const fromEmail = process.env.SMTP_USER || 'onboarding@resend.dev';
-      const result = await axios.post('https://api.resend.com/emails', {
-        from: `FlowGrid 📅 <${fromEmail}>`,
-        to: [to],
-        subject,
-        html,
-        text,
-      }, {
-        headers: {
-          'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
-          'Content-Type': 'application/json',
-        }
-      });
-      console.log(`✅ [SMTP/API] Email sent via Resend API to ${to} | ID: ${result.data.id}`);
-      return { messageId: result.data.id };
-    } catch (error) {
-      const errMsg = error.response?.data?.message || error.message;
-      console.error(`❌ [SMTP/API] Resend API FAILED to ${to}: ${errMsg}`);
-      throw new Error(`Resend API failed: ${errMsg}`);
-    }
-  }
+  console.log(`📧 [Resend] Attempting to send OTP email to ${to}...`);
 
-  // Option B: SendGrid API (HTTPS - bypasses port blocks)
-  if (process.env.SENDGRID_API_KEY) {
-    try {
-      console.log(`📧 [SMTP/API] Attempting to send OTP email via SendGrid API to ${to}...`);
-      const fromEmail = process.env.SMTP_USER || 'no-reply@flowgrid.com';
-      const result = await axios.post('https://api.sendgrid.com/v3/mail/send', {
-        personalizations: [{ to: [{ email: to }] }],
-        from: { email: fromEmail, name: 'FlowGrid 📅' },
-        subject,
-        content: [
-          { type: 'text/plain', value: text },
-          { type: 'text/html', value: html }
-        ]
-      }, {
-        headers: {
-          'Authorization': `Bearer ${process.env.SENDGRID_API_KEY}`,
-          'Content-Type': 'application/json',
-        }
-      });
-      console.log(`✅ [SMTP/API] Email sent via SendGrid API to ${to}`);
-      return { messageId: result.headers['x-message-id'] || 'SendGrid-Success' };
-    } catch (error) {
-      const errMsg = JSON.stringify(error.response?.data || error.message);
-      console.error(`❌ [SMTP/API] SendGrid API FAILED to ${to}: ${errMsg}`);
-      throw new Error(`SendGrid API failed: ${errMsg}`);
-    }
-  }
-
-  // Option C: Standard NodeMailer (SMTP)
-  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    console.error('❌ [SMTP] Cannot send email — SMTP_USER or SMTP_PASS not set!');
-    throw new Error('SMTP credentials not configured');
-  }
-
-  console.log(`📧 [SMTP] Attempting to send OTP email via SMTP to ${to}...`);
-  const activeTransporter = await getTransporter();
-  const result = await activeTransporter.sendMail({
-    from: `"FlowGrid 📅" <${process.env.SMTP_USER}>`,
-    to,
+  const { data, error } = await resend.emails.send({
+    from: 'FlowGrid <onboarding@resend.dev>',
+    to: [to],
     subject,
     text,
     html,
   });
 
-  console.log(`✅ [SMTP] Email sent to ${to} | MessageId: ${result.messageId}`);
-  return result;
+  if (error) {
+    console.error(`❌ [Resend] Email FAILED to ${to}: ${error.message}`);
+    throw new Error(error.message);
+  }
+
+  console.log(`✅ [Resend] Email sent to ${to} | ID: ${data?.id}`);
+  return { messageId: data?.id };
 };
 
 module.exports = { sendOTPEmail };

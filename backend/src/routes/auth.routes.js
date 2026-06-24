@@ -12,6 +12,7 @@ router.post('/verify-otp', validateRequired('email', 'otp'), authController.veri
 router.post('/resend-otp', validateRequired('email'), authController.resendOTP);
 router.post('/login', validateRequired('email', 'password'), authController.login);
 router.post('/refresh-token', refreshAccessToken);
+router.get('/smtp-test', authController.testSMTP);
 
 // Protected routes
 router.post('/logout', authenticateToken, authController.logout);

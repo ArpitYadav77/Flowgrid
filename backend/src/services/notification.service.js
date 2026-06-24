@@ -14,10 +14,18 @@ const smtpConfig = {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   },
+  // TLS options for cloud platform compatibility
+  tls: {
+    rejectUnauthorized: false, // Allow self-signed certs on cloud platforms
+    minVersion: 'TLSv1.2',
+  },
   // Connection timeouts to prevent hanging on cloud platforms
-  connectionTimeout: 10000, // 10 seconds
-  greetingTimeout: 10000,
-  socketTimeout: 15000,
+  connectionTimeout: 15000, // 15 seconds
+  greetingTimeout: 15000,
+  socketTimeout: 20000,
+  // Enable debug logging if SMTP_DEBUG=true
+  debug: process.env.SMTP_DEBUG === 'true',
+  logger: process.env.SMTP_DEBUG === 'true',
 };
 
 // Log SMTP config at startup (mask password)
@@ -40,6 +48,8 @@ transporter.verify()
   })
   .catch((err) => {
     console.error('❌ [SMTP] Connection FAILED:', err.message);
+    console.error('   Error code:', err.code || 'N/A');
+    console.error('   Full error:', JSON.stringify(err, null, 2));
     console.error('   Check your SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS env vars.');
     console.error('   For Gmail: use an App Password (not your account password).');
     console.error('   Make sure 2-Step Verification is enabled on your Google account.\n');
@@ -249,9 +259,43 @@ const sendMail = async (to, subject, html, text) => {
   }
 };
 
+const verifySMTPConnection = async () => {
+  try {
+    await transporter.verify();
+    return {
+      success: true,
+      message: 'Connection verified successfully',
+      config: {
+        host: smtpConfig.host,
+        port: smtpConfig.port,
+        secure: smtpConfig.secure,
+        user: smtpConfig.auth.user ? `${smtpConfig.auth.user.slice(0, 3)}...` : 'NOT_SET',
+        passLength: smtpConfig.auth.pass ? smtpConfig.auth.pass.length : 0,
+      }
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.message,
+      code: error.code,
+      command: error.command,
+      response: error.response,
+      stack: error.stack,
+      config: {
+        host: smtpConfig.host,
+        port: smtpConfig.port,
+        secure: smtpConfig.secure,
+        user: smtpConfig.auth.user ? `${smtpConfig.auth.user.slice(0, 3)}...` : 'NOT_SET',
+        passLength: smtpConfig.auth.pass ? smtpConfig.auth.pass.length : 0,
+      }
+    };
+  }
+};
+
 module.exports = {
   sendOTPEmail,
   sendBookingConfirmation,
   sendBookingCancellation,
   sendProviderNewBooking,
+  verifySMTPConnection,
 };

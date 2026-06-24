@@ -3,7 +3,7 @@
 const bcrypt = require('bcryptjs');
 const prisma = require('../config/database');
 const { generateAccessToken, generateRefreshToken, revokeAllTokens } = require('../middleware/auth');
-const { sendOTPEmail } = require('../services/notification.service');
+const { sendOTPEmail, verifySMTPConnection } = require('../services/notification.service');
 const { AppError } = require('../middleware/errorHandler');
 const crypto = require('crypto');
 
@@ -348,6 +348,36 @@ const completeFirstLogin = async (req, res, next) => {
   }
 };
 
+const testSMTP = async (req, res, next) => {
+  try {
+    const testEmail = req.query.email;
+    const diagnostics = await verifySMTPConnection();
+    
+    if (testEmail) {
+      try {
+        console.log(`[SMTP TEST] Sending test OTP to ${testEmail}`);
+        const result = await sendOTPEmail(testEmail, '123456');
+        diagnostics.sendTest = {
+          success: true,
+          messageId: result.messageId,
+          recipient: testEmail,
+        };
+      } catch (sendErr) {
+        diagnostics.sendTest = {
+          success: false,
+          error: sendErr.message,
+          code: sendErr.code || 'N/A',
+          stack: sendErr.stack,
+        };
+      }
+    }
+    
+    res.json(diagnostics);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   signup,
   verifyOTP,
@@ -358,4 +388,5 @@ module.exports = {
   getMe,
   updateProfile,
   completeFirstLogin,
+  testSMTP,
 };

@@ -14,48 +14,74 @@ process.env.NODEJS_PREFER_IPV4 = '1';
 
 // ─── SMTP Configuration ────────────────────────────────────────────
 
-const smtpPort = parseInt(process.env.SMTP_PORT || '587');
+let transporter = null;
+let resolvedSmtpHost = null;
 
-const smtpConfig = {
-  host: process.env.SMTP_HOST || 'smtp.gmail.com',
-  port: smtpPort,
-  secure: smtpPort === 465, // true for 465 (SSL), false for 587 (STARTTLS)
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-  // TLS options for cloud platform compatibility
-  tls: {
-    rejectUnauthorized: false, // Allow self-signed certs on cloud platforms
-    minVersion: 'TLSv1.2',
-  },
-  // Connection timeouts to prevent hanging on cloud platforms
-  connectionTimeout: 15000, // 15 seconds
-  greetingTimeout: 15000,
-  socketTimeout: 20000,
-  // Enable debug logging if SMTP_DEBUG=true
-  debug: process.env.SMTP_DEBUG === 'true',
-  logger: process.env.SMTP_DEBUG === 'true',
+const getTransporter = async () => {
+  if (transporter) return transporter;
+
+  const originalHost = process.env.SMTP_HOST || 'smtp.gmail.com';
+  let hostIp = originalHost;
+
+  // Render/Vercel IPv6 workaround: Resolve hostname to IPv4 address to bypass ENETUNREACH
+  if (!process.env.RESEND_API_KEY && !process.env.SENDGRID_API_KEY) {
+    try {
+      const dnsPromises = require('dns').promises;
+      const ipAddresses = await dnsPromises.resolve4(originalHost);
+      if (ipAddresses && ipAddresses.length > 0) {
+        hostIp = ipAddresses[0];
+        resolvedSmtpHost = hostIp;
+        console.log(`📡 [DNS] Resolved SMTP host ${originalHost} -> IPv4 ${hostIp}`);
+      }
+    } catch (dnsErr) {
+      console.warn(`⚠️ [DNS] Failed to resolve ${originalHost} to IPv4: ${dnsErr.message}. Falling back to default hostname.`);
+    }
+  }
+
+  const smtpPort = parseInt(process.env.SMTP_PORT || '587');
+  const smtpConfig = {
+    host: hostIp,
+    port: smtpPort,
+    secure: smtpPort === 465, // true for 465 (SSL), false for 587 (STARTTLS)
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+    // TLS options for cloud platform compatibility
+    tls: {
+      rejectUnauthorized: false, // Allow self-signed certs on cloud platforms
+      minVersion: 'TLSv1.2',
+      servername: originalHost, // CRITICAL: Required for TLS verification when connecting via IP address
+    },
+    // Connection timeouts to prevent hanging on cloud platforms
+    connectionTimeout: 15000, // 15 seconds
+    greetingTimeout: 15000,
+    socketTimeout: 20000,
+    // Enable debug logging if SMTP_DEBUG=true
+    debug: process.env.SMTP_DEBUG === 'true',
+    logger: process.env.SMTP_DEBUG === 'true',
+  };
+
+  // Log SMTP config at initialization (mask password)
+  console.log('\n📧 [SMTP] Initializing Transporter:');
+  console.log(`   Host (Original) : ${originalHost}`);
+  console.log(`   Host (Resolved) : ${smtpConfig.host}`);
+  console.log(`   Port            : ${smtpConfig.port}`);
+  console.log(`   Secure          : ${smtpConfig.secure}`);
+  console.log(`   User            : ${smtpConfig.auth.user || '⚠️  NOT SET'}`);
+  console.log(`   Pass            : ${smtpConfig.auth.pass ? '****' + smtpConfig.auth.pass.slice(-4) : '⚠️  NOT SET'}`);
+
+  transporter = nodemailer.createTransport(smtpConfig);
+  return transporter;
 };
-
-// Log SMTP config at startup (mask password) if not using API keys
-if (!process.env.RESEND_API_KEY && !process.env.SENDGRID_API_KEY) {
-  console.log('\n📧 [SMTP] Configuration:');
-  console.log(`   Host    : ${smtpConfig.host}`);
-  console.log(`   Port    : ${smtpConfig.port}`);
-  console.log(`   Secure  : ${smtpConfig.secure}`);
-  console.log(`   User    : ${smtpConfig.auth.user || '⚠️  NOT SET'}`);
-  console.log(`   Pass    : ${smtpConfig.auth.pass ? '****' + smtpConfig.auth.pass.slice(-4) : '⚠️  NOT SET'}`);
-}
-
-const transporter = nodemailer.createTransport(smtpConfig);
 
 const FROM_ADDRESS = `"FlowGrid 📅" <${process.env.SMTP_USER || 'your@gmail.com'}>`;
 
 // ─── Verify Connection on Startup ──────────────────────────────
 
 if (!process.env.RESEND_API_KEY && !process.env.SENDGRID_API_KEY) {
-  transporter.verify()
+  getTransporter()
+    .then((t) => t.verify())
     .then(() => {
       console.log('✅ [SMTP] Connection verified — emails are ready to send!\n');
     })
@@ -311,7 +337,8 @@ const sendMail = async (to, subject, html, text) => {
 
   try {
     console.log(`📧 [SMTP] Attempting to send email via SMTP to ${to}...`);
-    const result = await transporter.sendMail({
+    const activeTransporter = await getTransporter();
+    const result = await activeTransporter.sendMail({
       from: FROM_ADDRESS,
       to,
       subject,
@@ -357,20 +384,29 @@ const verifySMTPConnection = async () => {
   }
 
   try {
-    await transporter.verify();
+    const activeTransporter = await getTransporter();
+    await activeTransporter.verify();
+    
+    const originalHost = process.env.SMTP_HOST || 'smtp.gmail.com';
+    const smtpPort = parseInt(process.env.SMTP_PORT || '587');
+    
     return {
       success: true,
       mode: 'SMTP',
       message: 'SMTP Connection verified successfully',
       config: {
-        host: smtpConfig.host,
-        port: smtpConfig.port,
-        secure: smtpConfig.secure,
-        user: smtpConfig.auth.user ? `${smtpConfig.auth.user.slice(0, 3)}...` : 'NOT_SET',
-        passLength: smtpConfig.auth.pass ? smtpConfig.auth.pass.length : 0,
+        host: originalHost,
+        resolvedHost: resolvedSmtpHost || originalHost,
+        port: smtpPort,
+        secure: smtpPort === 465,
+        user: process.env.SMTP_USER ? `${process.env.SMTP_USER.slice(0, 3)}...` : 'NOT_SET',
+        passLength: process.env.SMTP_PASS ? process.env.SMTP_PASS.length : 0,
       }
     };
   } catch (error) {
+    const originalHost = process.env.SMTP_HOST || 'smtp.gmail.com';
+    const smtpPort = parseInt(process.env.SMTP_PORT || '587');
+    
     return {
       success: false,
       mode: 'SMTP',
@@ -380,11 +416,12 @@ const verifySMTPConnection = async () => {
       response: error.response,
       stack: error.stack,
       config: {
-        host: smtpConfig.host,
-        port: smtpConfig.port,
-        secure: smtpConfig.secure,
-        user: smtpConfig.auth.user ? `${smtpConfig.auth.user.slice(0, 3)}...` : 'NOT_SET',
-        passLength: smtpConfig.auth.pass ? smtpConfig.auth.pass.length : 0,
+        host: originalHost,
+        resolvedHost: resolvedSmtpHost || originalHost,
+        port: smtpPort,
+        secure: smtpPort === 465,
+        user: process.env.SMTP_USER ? `${process.env.SMTP_USER.slice(0, 3)}...` : 'NOT_SET',
+        passLength: process.env.SMTP_PASS ? process.env.SMTP_PASS.length : 0,
       }
     };
   }

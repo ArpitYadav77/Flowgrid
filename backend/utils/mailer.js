@@ -10,19 +10,50 @@ if (dns.setDefaultResultOrder) {
 }
 process.env.NODEJS_PREFER_IPV4 = '1';
 
-const smtpPort = parseInt(process.env.SMTP_PORT || '587');
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'smtp.gmail.com',
-  port: smtpPort,
-  secure: smtpPort === 465,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS
-  },
-  connectionTimeout: 10000,
-  greetingTimeout: 10000,
-  socketTimeout: 15000,
-});
+let transporter = null;
+
+const getTransporter = async () => {
+  if (transporter) return transporter;
+
+  const originalHost = process.env.SMTP_HOST || 'smtp.gmail.com';
+  let hostIp = originalHost;
+
+  // Render/Vercel IPv6 workaround: Resolve hostname to IPv4 address to bypass ENETUNREACH
+  if (!process.env.RESEND_API_KEY && !process.env.SENDGRID_API_KEY) {
+    try {
+      const dnsPromises = require('dns').promises;
+      const ipAddresses = await dnsPromises.resolve4(originalHost);
+      if (ipAddresses && ipAddresses.length > 0) {
+        hostIp = ipAddresses[0];
+        console.log(`📡 [DNS] Resolved SMTP host ${originalHost} -> IPv4 ${hostIp}`);
+      }
+    } catch (dnsErr) {
+      console.warn(`⚠️ [DNS] Failed to resolve ${originalHost} to IPv4: ${dnsErr.message}. Falling back to default hostname.`);
+    }
+  }
+
+  const smtpPort = parseInt(process.env.SMTP_PORT || '587');
+  const smtpConfig = {
+    host: hostIp,
+    port: smtpPort,
+    secure: smtpPort === 465,
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS
+    },
+    tls: {
+      rejectUnauthorized: false,
+      minVersion: 'TLSv1.2',
+      servername: originalHost, // REQUIRED for SSL validation when using IP address
+    },
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
+  };
+
+  transporter = nodemailer.createTransport(smtpConfig);
+  return transporter;
+};
 
 /**
  * Sends an OTP verification email.
@@ -116,7 +147,8 @@ const sendOTPEmail = async (to, otp) => {
   }
 
   console.log(`📧 [SMTP] Attempting to send OTP email via SMTP to ${to}...`);
-  const result = await transporter.sendMail({
+  const activeTransporter = await getTransporter();
+  const result = await activeTransporter.sendMail({
     from: `"FlowGrid 📅" <${process.env.SMTP_USER}>`,
     to,
     subject,

@@ -19,8 +19,28 @@ const signup = async (req, res, next) => {
   try {
     const { name, email, password, role = 'CUSTOMER', businessName, category, latitude, longitude } = req.body;
 
-    const normalizedRole = role.toUpperCase();
-    if (!ROLES.includes(normalizedRole)) {
+    let dbRole = 'CUSTOMER';
+    let dbCategory = category;
+
+    const inputRole = (role || 'CUSTOMER').toLowerCase();
+    if (inputRole === 'customer') {
+      dbRole = 'CUSTOMER';
+    } else if (['salon_owner', 'tutor', 'car_washer', 'service_provider', 'provider'].includes(inputRole)) {
+      dbRole = 'PROVIDER';
+      if (!dbCategory) {
+        if (inputRole === 'salon_owner') {
+          dbCategory = 'salon';
+        } else if (inputRole === 'tutor') {
+          dbCategory = 'tutor';
+        } else if (inputRole === 'car_washer') {
+          dbCategory = 'car_washer';
+        } else {
+          dbCategory = 'general';
+        }
+      }
+    } else if (inputRole === 'admin') {
+      dbRole = 'ADMIN';
+    } else {
       throw new AppError('Invalid role', 400);
     }
 
@@ -39,15 +59,15 @@ const signup = async (req, res, next) => {
         email: email.toLowerCase(),
         password: hashedPassword,
         name,
-        role: normalizedRole,
+        role: dbRole,
         otp: otpCode,
         otpExpiresAt,
         // Create provider profile if not a customer
-        ...(normalizedRole === 'PROVIDER' && {
+        ...(dbRole === 'PROVIDER' && {
           provider: {
             create: {
               businessName: businessName || name,
-              category: category || 'general',
+              category: dbCategory || 'general',
               latitude: latitude ? parseFloat(latitude) : null,
               longitude: longitude ? parseFloat(longitude) : null,
             },

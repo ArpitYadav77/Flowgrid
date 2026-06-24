@@ -149,21 +149,23 @@ const Settings = () => {
   };
 
   const getRoleDisplayName = (role) => {
+    const normalizedRole = (role || '').toLowerCase();
     const roles = {
       customer: 'Customer',
       provider: 'Service Provider',
       admin: 'Administrator'
     };
-    return roles[role] || role;
+    return roles[normalizedRole] || role;
   };
 
   const getRoleDescription = (role) => {
+    const normalizedRole = (role || '').toLowerCase();
     const descriptions = {
       customer: 'Book and manage service appointments',
       provider: 'Offer services and manage bookings',
       admin: 'System administration and oversight'
     };
-    return descriptions[role] || '';
+    return descriptions[normalizedRole] || '';
   };
 
   const getLastLoginInfo = () => {

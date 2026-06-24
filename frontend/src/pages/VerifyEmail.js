@@ -12,8 +12,12 @@ const VerifyEmail = () => {
   const location = useLocation();
   const { verifyOTP } = useAuth();
 
-  // Email passed from SignUp or SignIn via navigation state
-  const [email, setEmail] = useState(location.state?.email || '');
+  // Email passed from SignUp or SignIn via navigation state or query parameter
+  const [email, setEmail] = useState(() => {
+    if (location.state?.email) return location.state.email;
+    const queryEmail = new URLSearchParams(location.search).get('email');
+    return queryEmail || '';
+  });
   const [digits, setDigits] = useState(Array(OTP_LENGTH).fill(''));
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');

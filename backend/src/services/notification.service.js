@@ -2,17 +2,18 @@
 
 const nodemailer = require('nodemailer');
 
+const smtpPort = parseInt(process.env.SMTP_PORT || '465');
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST || 'smtp.gmail.com',
-  port: parseInt(process.env.SMTP_PORT || '465'),
-  secure: true,
+  port: smtpPort,
+  secure: smtpPort === 465,
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   },
 });
 
-const FROM_ADDRESS = `"FlowGrid" <${process.env.SMTP_USER || 'noreply@flowgrid.com'}>`;
+const FROM_ADDRESS = `"FlowGrid 📅" <${process.env.SMTP_USER || 'your@gmail.com'}>`;
 
 // ─── Email Templates ────────────────────────────────────────────────
 
@@ -55,16 +56,30 @@ const wrapHtml = (body) => `
  * Send OTP verification email.
  */
 const sendOTPEmail = async (to, otp) => {
-  const html = wrapHtml(`
-    <div class="header"><h1>Verify Your Email</h1></div>
-    <div class="body">
-      <p>Use the code below to activate your FlowGrid account. It expires in <strong>30 seconds</strong>.</p>
-      <div class="highlight">${otp}</div>
-      <p style="color: #6b7280; font-size: 13px;">If you didn't create a FlowGrid account, you can safely ignore this email.</p>
-    </div>
-  `);
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+  const html = `
+    <div style="background:#0d2b2b; color:#fff; font-family:sans-serif; padding:40px; border-radius:12px; max-width: 520px; margin: 32px auto; box-shadow: 0 4px 20px rgba(0,0,0,0.15);">
+      <h1 style="color:#c9a84c; margin-top:0;">Welcome to FlowGrid 🎉</h1>
+      <p>Your chaotic booking days are <strong>officially OVER.</strong></p>
+      <p>
+        📅 <b>Real-time Booking</b> — No double bookings. Ever.<br/>
+        🔒 <b>Secure Payments</b> — Powered by Razorpay.<br/>
+        📊 <b>Business Analytics</b> — Watch your revenue grow.
+      </p>
+      
+      <div style="background: #113f3f; border: 1px solid #c9a84c; border-radius: 8px; padding: 20px; text-align: center; margin: 24px 0;">
+        <span style="font-size: 13px; text-transform: uppercase; letter-spacing: 2px; color: #a1b8b8; display: block; margin-bottom: 8px;">Your Verification Code</span>
+        <div style="font-size: 36px; font-weight: bold; color: #c9a84c; letter-spacing: 8px; margin-left: 8px;">${otp}</div>
+      </div>
 
-  return sendMail(to, 'Your FlowGrid Verification Code', html);
+      <a href="${frontendUrl}/verify-email?email=${encodeURIComponent(to)}" style="background:#c9a84c; color:#000; padding:14px 28px; border-radius:8px; text-decoration:none; font-weight:bold; display:inline-block;">
+        Verify My Email →
+      </a>
+      <p style="margin-top:24px; font-size:12px; color:#a1b8b8;">The code is valid for 5 minutes. Don't ghost it! 😄</p>
+    </div>
+  `;
+
+  return sendMail(to, "🎉 You're in! Welcome to FlowGrid — your business just got a glow-up", html);
 };
 
 /**

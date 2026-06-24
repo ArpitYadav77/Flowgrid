@@ -1,6 +1,16 @@
 import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+let API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+
+// Typos safeguard: Automatically append '/api' if omitted by the user
+if (API_BASE_URL) {
+  const trimmedUrl = API_BASE_URL.trim().replace(/\/+$/, ''); // remove trailing slashes
+  if (!trimmedUrl.endsWith('/api')) {
+    API_BASE_URL = `${trimmedUrl}/api`;
+  } else {
+    API_BASE_URL = trimmedUrl;
+  }
+}
 
 const api = axios.create({
   baseURL: API_BASE_URL,

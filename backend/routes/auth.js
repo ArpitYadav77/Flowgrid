@@ -89,13 +89,13 @@ router.post('/signup', async (req, res) => {
   console.log(`[OTP] Expires: ${otpExpiresAt.toISOString()}`);
   console.log('='.repeat(50) + '\n');
 
-  // Attempt to send email (requires SMTP config in .env)
+  // Attempt to send email (requires Resend config in .env)
   try {
     await sendOTPEmail(newUser.email, otpCode);
     console.log(`[OTP] Email sent to ${newUser.email}`);
   } catch (emailErr) {
     console.warn(`[OTP] Email delivery failed: ${emailErr.message}`);
-    console.warn('[OTP] Configure SMTP_HOST/SMTP_USER/SMTP_PASS in backend/.env to enable email delivery.');
+    console.warn('[OTP] Configure RESEND_API_KEY in backend/.env to enable email delivery.');
   }
 
   res.status(201).json({

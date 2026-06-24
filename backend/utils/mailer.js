@@ -1,4 +1,13 @@
 const nodemailer = require('nodemailer');
+const dns = require('dns');
+
+// Force Node.js to prefer IPv4 over IPv6 when resolving hostnames.
+// Modern Node.js versions on cloud environments (like Render/Vercel) often attempt
+// to connect via IPv6 first, leading to ENETUNREACH errors.
+if (dns.setDefaultResultOrder) {
+  dns.setDefaultResultOrder('ipv4first');
+}
+process.env.NODEJS_PREFER_IPV4 = '1';
 
 const smtpPort = parseInt(process.env.SMTP_PORT || '587');
 const transporter = nodemailer.createTransport({

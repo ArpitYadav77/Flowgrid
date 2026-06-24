@@ -3,6 +3,15 @@
 const dotenv = require('dotenv');
 dotenv.config();
 
+// Force Node.js to prefer IPv4 over IPv6 when resolving hostnames.
+// Modern Node.js versions on cloud environments (like Render) often attempt
+// to connect via IPv6 first, leading to ENETUNREACH errors.
+const dns = require('dns');
+if (dns.setDefaultResultOrder) {
+  dns.setDefaultResultOrder('ipv4first');
+}
+process.env.NODEJS_PREFER_IPV4 = '1';
+
 const http = require('http');
 const app = require('./src/app');
 const { initSocket } = require('./src/config/socket');

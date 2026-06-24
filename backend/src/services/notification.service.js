@@ -2,6 +2,7 @@
 
 const nodemailer = require('nodemailer');
 const dns = require('dns');
+const axios = require('axios');
 
 // Force Node.js to prefer IPv4 over IPv6 when resolving hostnames.
 // Modern Node.js versions on cloud environments (like Render/Vercel) often attempt
@@ -37,32 +38,38 @@ const smtpConfig = {
   logger: process.env.SMTP_DEBUG === 'true',
 };
 
-// Log SMTP config at startup (mask password)
-console.log('\n📧 [SMTP] Configuration:');
-console.log(`   Host    : ${smtpConfig.host}`);
-console.log(`   Port    : ${smtpConfig.port}`);
-console.log(`   Secure  : ${smtpConfig.secure}`);
-console.log(`   User    : ${smtpConfig.auth.user || '⚠️  NOT SET'}`);
-console.log(`   Pass    : ${smtpConfig.auth.pass ? '****' + smtpConfig.auth.pass.slice(-4) : '⚠️  NOT SET'}`);
+// Log SMTP config at startup (mask password) if not using API keys
+if (!process.env.RESEND_API_KEY && !process.env.SENDGRID_API_KEY) {
+  console.log('\n📧 [SMTP] Configuration:');
+  console.log(`   Host    : ${smtpConfig.host}`);
+  console.log(`   Port    : ${smtpConfig.port}`);
+  console.log(`   Secure  : ${smtpConfig.secure}`);
+  console.log(`   User    : ${smtpConfig.auth.user || '⚠️  NOT SET'}`);
+  console.log(`   Pass    : ${smtpConfig.auth.pass ? '****' + smtpConfig.auth.pass.slice(-4) : '⚠️  NOT SET'}`);
+}
 
 const transporter = nodemailer.createTransport(smtpConfig);
 
 const FROM_ADDRESS = `"FlowGrid 📅" <${process.env.SMTP_USER || 'your@gmail.com'}>`;
 
-// ─── Verify SMTP Connection on Startup ──────────────────────────────
+// ─── Verify Connection on Startup ──────────────────────────────
 
-transporter.verify()
-  .then(() => {
-    console.log('✅ [SMTP] Connection verified — emails are ready to send!\n');
-  })
-  .catch((err) => {
-    console.error('❌ [SMTP] Connection FAILED:', err.message);
-    console.error('   Error code:', err.code || 'N/A');
-    console.error('   Full error:', JSON.stringify(err, null, 2));
-    console.error('   Check your SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS env vars.');
-    console.error('   For Gmail: use an App Password (not your account password).');
-    console.error('   Make sure 2-Step Verification is enabled on your Google account.\n');
-  });
+if (!process.env.RESEND_API_KEY && !process.env.SENDGRID_API_KEY) {
+  transporter.verify()
+    .then(() => {
+      console.log('✅ [SMTP] Connection verified — emails are ready to send!\n');
+    })
+    .catch((err) => {
+      console.error('❌ [SMTP] Connection FAILED:', err.message);
+      console.error('   Error code:', err.code || 'N/A');
+      console.error('   Full error:', JSON.stringify(err, null, 2));
+      console.error('   Check your SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS env vars.');
+      console.error('   For Gmail: use an App Password (not your account password).');
+      console.error('   Make sure 2-Step Verification is enabled on your Google account.\n');
+    });
+} else {
+  console.log(`\n📡 [Email] Mode active: ${process.env.RESEND_API_KEY ? 'Resend' : 'SendGrid'} API over HTTPS (bypasses Render port blocks)\n`);
+}
 
 // ─── Email Templates ────────────────────────────────────────────────
 
@@ -242,14 +249,68 @@ const sendProviderNewBooking = async (to, booking, customerName) => {
 // ─── Core Send Function ─────────────────────────────────────────────
 
 const sendMail = async (to, subject, html, text) => {
-  // Guard: check credentials exist
+  // Option A: Resend API (HTTPS - bypasses port blocks)
+  if (process.env.RESEND_API_KEY) {
+    try {
+      console.log(`📧 [SMTP/API] Attempting to send email via Resend API to ${to}...`);
+      const fromEmail = process.env.SMTP_USER || 'onboarding@resend.dev';
+      const result = await axios.post('https://api.resend.com/emails', {
+        from: `FlowGrid 📅 <${fromEmail}>`,
+        to: [to],
+        subject,
+        html,
+        ...(text && { text }),
+      }, {
+        headers: {
+          'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+          'Content-Type': 'application/json',
+        }
+      });
+      console.log(`✅ [SMTP/API] Email sent via Resend API to ${to} | ID: ${result.data.id}`);
+      return { messageId: result.data.id };
+    } catch (error) {
+      const errMsg = error.response?.data?.message || error.message;
+      console.error(`❌ [SMTP/API] Resend API FAILED to ${to}: ${errMsg}`);
+      throw new Error(`Resend API failed: ${errMsg}`);
+    }
+  }
+
+  // Option B: SendGrid API (HTTPS - bypasses port blocks)
+  if (process.env.SENDGRID_API_KEY) {
+    try {
+      console.log(`📧 [SMTP/API] Attempting to send email via SendGrid API to ${to}...`);
+      const fromEmail = process.env.SMTP_USER || 'no-reply@flowgrid.com';
+      const result = await axios.post('https://api.sendgrid.com/v3/mail/send', {
+        personalizations: [{ to: [{ email: to }] }],
+        from: { email: fromEmail, name: 'FlowGrid 📅' },
+        subject,
+        content: [
+          ...(text ? [{ type: 'text/plain', value: text }] : []),
+          { type: 'text/html', value: html }
+        ]
+      }, {
+        headers: {
+          'Authorization': `Bearer ${process.env.SENDGRID_API_KEY}`,
+          'Content-Type': 'application/json',
+        }
+      });
+      console.log(`✅ [SMTP/API] Email sent via SendGrid API to ${to}`);
+      return { messageId: result.headers['x-message-id'] || 'SendGrid-Success' };
+    } catch (error) {
+      const errMsg = JSON.stringify(error.response?.data || error.message);
+      console.error(`❌ [SMTP/API] SendGrid API FAILED to ${to}: ${errMsg}`);
+      throw new Error(`SendGrid API failed: ${errMsg}`);
+    }
+  }
+
+  // Option C: Standard NodeMailer (SMTP)
   if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
     console.error('❌ [SMTP] Cannot send email — SMTP_USER or SMTP_PASS not set in environment variables!');
     throw new Error('SMTP credentials not configured');
   }
 
   try {
-    console.log(`📧 [SMTP] Attempting to send email to ${to}...`);
+    console.log(`📧 [SMTP] Attempting to send email via SMTP to ${to}...`);
     const result = await transporter.sendMail({
       from: FROM_ADDRESS,
       to,
@@ -269,11 +330,38 @@ const sendMail = async (to, subject, html, text) => {
 };
 
 const verifySMTPConnection = async () => {
+  if (process.env.RESEND_API_KEY) {
+    return {
+      success: true,
+      mode: 'Resend API',
+      message: 'Resend API key detected. Emails will be sent over HTTPS (bypasses Render port blocks).',
+      config: {
+        host: 'api.resend.com (HTTPS)',
+        port: 443,
+        user: process.env.SMTP_USER || 'onboarding@resend.dev',
+      }
+    };
+  }
+
+  if (process.env.SENDGRID_API_KEY) {
+    return {
+      success: true,
+      mode: 'SendGrid API',
+      message: 'SendGrid API key detected. Emails will be sent over HTTPS (bypasses Render port blocks).',
+      config: {
+        host: 'api.sendgrid.com (HTTPS)',
+        port: 443,
+        user: process.env.SMTP_USER || 'no-reply@flowgrid.com',
+      }
+    };
+  }
+
   try {
     await transporter.verify();
     return {
       success: true,
-      message: 'Connection verified successfully',
+      mode: 'SMTP',
+      message: 'SMTP Connection verified successfully',
       config: {
         host: smtpConfig.host,
         port: smtpConfig.port,
@@ -285,6 +373,7 @@ const verifySMTPConnection = async () => {
   } catch (error) {
     return {
       success: false,
+      mode: 'SMTP',
       error: error.message,
       code: error.code,
       command: error.command,

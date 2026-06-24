@@ -24,6 +24,9 @@ const unsplashRoutes = require('../routes/unsplash');
 
 const app = express();
 
+// Trust first proxy (Render, Vercel, etc.) for express-rate-limit
+app.set('trust proxy', 1);
+
 // ─── CORS ───────────────────────────────────────────────────────────
 
 const allowedOrigins = [

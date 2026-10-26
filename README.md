@@ -1,188 +1,191 @@
 # 🌐 FlowGrid – Local Services Booking Platform
 
-FlowGrid is a full-stack web application that connects customers with local service providers such as salons, tutors, and other professionals.  
-It enables service discovery, booking management, and secure payments with role-based dashboards.
+FlowGrid is a full-stack web application that connects customers with local service providers such as salons and tutors.
+It supports service discovery, slot-based booking, online payments, and role-based dashboards.
 
 ---
 
 ## 🚀 Features
 
 ### 👤 Multi-Role System
-- Customer
-- Salon Owner
-- Tutor / Service Provider
+- **Customer** – browse services, book slots, pay, review
+- **Salon Owner / Tutor (Provider)** – manage services, slots and bookings
+- **Admin** – platform-level management
 
-Each role has a **dedicated dashboard and permissions**.
+Each role has its own dashboard and permissions.
 
----
+### 📅 Booking & Slots
+- Browse and search services
+- Slot-based availability (time slots generated per provider)
+- Booking status management (provider side)
+- Reviews and ratings
 
-### ✂️ Salon Owner Dashboard
-- Overview of revenue, bookings, and ratings
-- Manage services (add / edit / delete)
-- View bookings (upcoming & past)
-- Track payments
-- Analytics (basic trends)
-- Settings & Help Center
+### 💳 Payments (Razorpay)
+- Order-based payment flow with signature verification
+- Card and UPI (Checkout) payments, QR code generation
+- Webhook endpoint for payment events
+- Per-user payment history
 
----
-
-### 📅 Booking Management
-- Customers can browse services
-- Book services with time & price
-- Salon owners can manage booking status
-
----
-
-### 💳 Payments Integration
-- Razorpay **Test Mode** integration
-- Supports:
-  - Card payments
-  - UPI (Checkout flow)
-  - QR code generation
-- Payment history stored and displayed per user
-
-⚠️ **Note:**  
-Razorpay test-mode QR codes cannot be paid using real UPI apps (GPay/PhonePe).  
-QR payments are simulated in test mode as per Razorpay’s design.
-
----
+> ⚠️ Razorpay test-mode QR codes cannot be paid with real UPI apps (GPay/PhonePe). QR payments are simulated in test mode.
 
 ### 🔐 Authentication & Security
-- JWT-based authentication
-- Role-based access control (RBAC)
-- Protected routes (frontend + backend)
+- JWT access tokens + refresh tokens (stored in the database)
+- Email verification via [Resend](https://resend.com)
+- Role-based access control (frontend + backend)
+- Rate limiting on auth and general API routes
+
+### ✨ Extras
+- Real-time updates with Socket.io
+- In-app chatbot
+- Unsplash-powered service imagery
 
 ---
 
 ## 🛠️ Tech Stack
 
-### Frontend
-- React.js
-- CSS / modern UI components
-- lucide-react icons
-- Axios
-
-### Backend
-- Node.js
-- Express.js
-- JWT Authentication
-- Razorpay SDK
-
-### Database
-- MySQL
+| Layer    | Technology |
+|----------|------------|
+| Frontend | React 18 (Create React App), Axios, socket.io-client |
+| Backend  | Node.js, Express, Socket.io, JWT, bcryptjs, express-rate-limit |
+| Database | PostgreSQL via Prisma ORM |
+| Services | Razorpay (payments), Resend (email), Unsplash (images) |
+| Deploy   | Vercel config included (`vercel.json`) |
 
 ---
 
 ## 📁 Project Structure
 
-FLOWGRID/
-│
+```
+Flowgrid/
 ├── backend/
-│ ├── data/
-│ ├── middleware/
-│ │ └── auth.js
-│ ├── routes/
-│ ├── utils/
-│ ├── server.js
-│ └── .env
-│
+│   ├── prisma/          # schema.prisma, migrations, seed.js
+│   ├── src/             # app.js, controllers, routes, services, middleware, config
+│   ├── routes/          # legacy route modules (auth, bookings, payments, razorpay, ...)
+│   ├── middleware/
+│   ├── utils/
+│   └── server.js        # entry point (HTTP + Socket.io)
 ├── frontend/
-│ ├── public/
-│ ├── src/
-│ │ ├── components/
-│ │ ├── context/
-│ │ ├── pages/
-│ │ ├── services/
-│ │ │ └── api.js
-│ │ ├── styles/
-│ │ ├── App.js
-│ │ └── index.js
-│
-└── README.md
-
-yaml
-Copy code
+│   ├── public/
+│   └── src/             # components, context, pages, services, styles
+├── RAZORPAY_SETUP.md
+├── QR_PAYMENT_GUIDE.md
+├── UNSPLASH_SETUP.md
+└── vercel.json
+```
 
 ---
 
-## ⚙️ Setup Instructions
+## ⚙️ Setup
 
-### 1️⃣ Clone the repository
+### Prerequisites
+- Node.js 18+
+- A PostgreSQL database
+
+### 1. Clone
 ```bash
-git clone https://github.com/your-username/flowgrid.git
-cd flowgrid
-2️⃣ Backend Setup
-bash
-Copy code
+git clone https://github.com/ArpitYadav77/Flowgrid.git
+cd Flowgrid
+```
+
+### 2. Backend
+```bash
 cd backend
 npm install
-Create .env file:
+```
 
-env
-Copy code
+Create `backend/.env`:
+
+```env
 PORT=5000
+NODE_ENV=development
+DATABASE_URL=postgresql://user:password@localhost:5432/flowgrid
 JWT_SECRET=your_jwt_secret
+JWT_REFRESH_SECRET=your_refresh_secret
+FRONTEND_URL=http://localhost:3000
+
+# Email (Resend)
+RESEND_API_KEY=re_xxxxx
+
+# Razorpay (test keys)
 RAZORPAY_KEY_ID=rzp_test_xxxxx
 RAZORPAY_KEY_SECRET=xxxxxxxx
-Start backend:
+RAZORPAY_WEBHOOK_SECRET=xxxxxxxx
 
-bash
-Copy code
-npm run dev
-3️⃣ Frontend Setup
-bash
-Copy code
+# Unsplash
+UNSPLASH_ACCESS_KEY=xxxxxxxx
+```
+
+Set up the database and start the server:
+
+```bash
+npm run db:push     # or: npm run db:migrate
+npm run db:seed     # optional demo data
+npm run dev         # http://localhost:5000  (health: /api/health)
+```
+
+### 3. Frontend
+```bash
 cd frontend
 npm install
-npm start
-Frontend runs on:
+npm start           # http://localhost:3000
+```
 
-arduino
-Copy code
-http://localhost:3000
-💳 Razorpay Test Mode Details
-Test Card
-yaml
-Copy code
+The frontend proxies API calls to `http://localhost:5000`, so **start the backend first** and make sure nothing else is using port 5000.
+
+### Demo accounts (after `npm run db:seed`)
+Password for all: `Demo@1234`
+
+| Role     | Email |
+|----------|-------|
+| Admin    | admin@flowgrid.com |
+| Customer | customer@flowgrid.com |
+| Salon    | salon@flowgrid.com |
+| Tutor    | tutor@flowgrid.com |
+
+### Useful backend scripts
+| Script | Purpose |
+|--------|---------|
+| `npm run dev` | Start with nodemon |
+| `npm start` | Start with node |
+| `npm run db:push` / `db:migrate` | Sync schema / run migrations |
+| `npm run db:seed` | Seed demo data |
+| `npm run db:studio` | Open Prisma Studio |
+| `npm run db:reset` | Reset the database (destructive) |
+
+---
+
+## 💳 Razorpay Test Mode
+
+```
 Card Number: 4111 1111 1111 1111
-Expiry: Any future date
-CVV: 123
-OTP: 123456
-Test UPI (Checkout only)
-yaml
-Copy code
-UPI ID: success@razorpay
-OTP: 123456
-❌ Real UPI apps do not work in test mode QR payments.
+Expiry:      any future date
+CVV:         123
+OTP:         123456
+UPI (Checkout only): success@razorpay
+```
 
-🧠 Design Decisions
-Backend started before frontend to avoid API failures
+See [RAZORPAY_SETUP.md](RAZORPAY_SETUP.md), [QR_PAYMENT_GUIDE.md](QR_PAYMENT_GUIDE.md) and [UNSPLASH_SETUP.md](UNSPLASH_SETUP.md) for details.
 
-Razorpay order-based payment flow
+---
 
-Simulated QR verification in test mode
+## 🧰 Troubleshooting
 
-Clean, role-focused dashboards
+- **`EADDRINUSE: :::5000`** – another process holds port 5000. Stop it or change `PORT` (and the `proxy` in `frontend/package.json`).
+- **Login returns 401/404 on `/api/...`** – the frontend is talking to a different backend on port 5000; confirm `http://localhost:5000/api/health` reports the FlowGrid API.
+- **No emails received** – check `RESEND_API_KEY`.
 
-Minimal but scalable architecture
+---
 
-📌 Future Enhancements
-Razorpay webhooks for real payment verification
+## 📌 Future Enhancements
+- Live-mode payments
+- Push / in-app notifications
+- Review moderation tools
+- Expanded analytics
 
-Live mode payment enablement
+---
 
-Notifications (email / in-app)
+## 👨‍💻 Author
+Arpit Yadav — B.Tech, Electrical & Computer Engineering. Interested in full-stack development and scalable systems.
 
-Admin dashboard
-
-Reviews & ratings moderation
-
-Slot-based availability management
-
-👨‍💻 Author
-Arpit Yadav
-B.Tech – Electrical & Computer Engineering
-Interested in Full-Stack Development & Scalable Systems
-
-📄 License
+## 📄 License
 This project is for learning, demonstration, and portfolio purposes.
